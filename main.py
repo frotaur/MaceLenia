@@ -1,0 +1,217 @@
+"""
+    Scipt to run the automaton in real time. See README for a list of hotkeys.
+"""
+
+import pygame, cv2, os, random
+import numpy as np, torch
+from modules import MCLenia, DiffusionLenia
+from modules.Camera import Camera
+from modules.utils import LeniaParams
+from modules.utils.main_utils import compute_ker
+
+#============================== PARAMETERS ==========================================================
+device = 'cuda' # Device on which to run the automaton
+W,H = 512,512 # Size of the automaton
+dt = 0.1 # Time step size
+num_channels= 3
+
+interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
+# interesting_dir = os.path.join('data','latest_rand') 
+
+remarkable_dir = os.path.join('data','remarkable') # Directory containing the parameters to save when pressing 's'
+#===========================DO NOT MODIFY BELOW THIS LINE===========================================
+
+param_gen = lambda dev: LeniaParams.default_gen(batch_size=1,num_channels=num_channels,k_size=31,device=dev)
+
+videos_dir = os.path.join('data','videos')
+
+
+os.makedirs(interesting_dir, exist_ok=True)
+os.makedirs(remarkable_dir, exist_ok=True)
+os.makedirs(videos_dir, exist_ok=True)
+
+interest_files = os.listdir(interesting_dir)
+
+if len(interest_files) > 0:
+    file = random.choice(interest_files)
+    params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
+else :
+    params = param_gen(device)
+    print('FUGG')
+
+# Initialize the automaton
+# auto = MCLenia((1,H,W), dt, params=params, num_channels=num_channels, device=device) # Uncomment for normal Lenia
+auto = DiffusionLenia((1,H,W), dt, num_channels=num_channels,device=device) # Uncomment for diffusion lenia
+auto.to(device)
+
+# Initialize the pygame screen 
+pygame.init()
+font = pygame.font.SysFont('consolas',10)
+
+screen = pygame.display.set_mode((W,H),flags=pygame.SCALED | pygame.RESIZABLE)
+clock = pygame.time.Clock()
+
+running = True
+camera = Camera(W,H)
+
+#Initialize the world_state array, of size (W,H,3) of RGB values at each position.
+world_state = np.random.randint(0,255,(W,H,3),dtype=np.uint8)
+
+updating = True
+launch_video=True
+
+n_steps = 0
+
+frame= 0
+
+chosen_interesting = 0
+
+display_kernel = False
+
+recording=False
+launch_video = True
+
+counter = 0 # counter to get only the frames we want
+
+kern = compute_ker(auto, device)
+k_size_override = None
+
+while running:
+    # poll for events
+    # pygame.QUIT event means the user clicked X to close your window
+    for event in pygame.event.get():
+        # Event loop. Here we deal with all the interactivity
+        if event.type == pygame.QUIT:
+            running = False
+        if event.type == pygame.KEYDOWN:
+            if(event.key == pygame.K_n):
+                """ New random parameters"""
+                # params = param_gen(device)
+                params = LeniaParams.random_gen(batch_size=1,num_channels=num_channels,device=device,k_size=31)
+                # Probably should put the lines below in a function
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
+                n_steps=0
+            if(event.key == pygame.K_u):
+                """ Variate around parameters"""
+                params = params.mutate(magnitude=0.1,rate=0.8)
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
+            if(event.key == pygame.K_i):
+                # Intialize with fractal perlin
+                auto.set_init_fractal()
+                n_steps=0
+            if(event.key == pygame.K_j):
+                # Initialize with perlin
+                auto.set_init_perlin()
+                n_steps=0
+            if(event.key == pygame.K_c):
+                auto.set_init_circle()
+                n_steps=0
+            if(event.key == pygame.K_k):
+                # Initialize with random wavelength perlin
+                sq_size = random.randint(5,min(W,H))
+                auto.set_init_perlin(wavelength=sq_size)
+            if(event.key == pygame.K_m):
+                # Load random interesting param
+                n_steps=0
+                file = interest_files[chosen_interesting]
+                chosen_interesting = (chosen_interesting+1)%len(interest_files)
+
+                params = LeniaParams(from_file=os.path.join(interesting_dir,file), device=device)
+                auto.update_params(params,k_size_override=k_size_override)
+                kern = compute_ker(auto, device) 
+                print('Loaded : ',  file)
+            if(event.key == pygame.K_s):
+                # Save the current parameters to remarkable dir :
+                para = auto.get_params()
+                para.save_indiv(remarkable_dir,annotation=['_nice'])
+            if(event.key == pygame.K_p):
+                # Toggle pause
+                updating=not updating
+            if(event.key == pygame.K_q):
+                # Toggle display kernel
+                display_kernel = not display_kernel
+            if(event.key == pygame.K_r):
+                # toggle recording
+                recording = not recording
+                if(not launch_video):
+                    video_out.release()
+                    launch_video = True 
+            if(event.key == pygame.K_UP):
+                if(hasattr(auto,'temp')):
+                    auto.temp +=0.2
+            if(event.key == pygame.K_DOWN):
+                if(hasattr(auto,'temp')):
+                    auto.temp -=0.2
+            if(event.key == pygame.K_DELETE):
+                # sets state to 0
+                auto.state = torch.zeros_like(auto.state)
+
+        # Handle the event loop for the camera
+        camera.handle_event(event)
+    
+    if(updating):
+        # Step the automaton if we are updating
+        with torch.no_grad():
+            auto.step()
+            n_steps += 1
+
+    auto.draw() # Draw the worldmap before retrieving it
+    
+    #Retrieve the world_state from automaton
+    world_state = auto.worldmap
+    # Display kernel not updated for now
+    if display_kernel == True:
+        world_state[:auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[0].cpu()
+        world_state[auto.k_size:2*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[1].cpu()  
+        world_state[2*auto.k_size:3*auto.k_size, auto.h-auto.k_size:auto.h,:] =  255*kern[2].cpu()  
+
+    #Make the viewable surface.
+    surface = pygame.surfarray.make_surface(world_state)
+    temp = f'{auto.temp:.2f}' if hasattr(auto,'temp') else 'N/A'
+    mass_text = font.render(f'Total Mass: {auto.mass().sum().item():.2f} Temp : {temp} MassMax : {auto.state.max():.2f}', True, (255, 255, 255))
+    surface.blit(mass_text, (10, 10))
+
+    if(recording):
+        if(launch_video):
+            launch_video = False
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            para = auto.get_params()
+            name = para.name
+            # Might need to change to MP4, this works on windows
+            vid_loc = os.path.join(videos_dir,name+'.mp4')
+
+            video_out = cv2.VideoWriter(vid_loc, fourcc, 120.0, (W, H))
+        if (counter%2 == 0):
+            frame_bgr = cv2.cvtColor(auto.worldmap.transpose(1,0,2), cv2.COLOR_RGB2BGR)
+            video_out.write(frame_bgr)
+        pygame.draw.circle(surface, (255,0,0), (W-10,H-10),2)
+        counter += 1
+    
+    
+    # Clear the screen 
+    screen.fill((0, 0, 0))
+
+    m = [f"{x.item(): .2f}" for x in auto.mass().squeeze(0)]
+
+    s = f'frames : {n_steps}, mass : {auto.mass().mean():.2f}'
+    upMacro = font.render(s, False, (255,255,255), (0,0,0))
+    
+
+    # Draw the scaled surface on the window
+    zoomed_surface = camera.apply(surface)
+
+    screen.blit(zoomed_surface, (0,0))
+    screen.blit(upMacro, (0,0))
+
+    # Update the screen
+    pygame.display.flip()
+
+    clock.tick(240)  # limits FPS to 120
+
+
+if(not launch_video):
+    video_out.release()
+
+pygame.quit()

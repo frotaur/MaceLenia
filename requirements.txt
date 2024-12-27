@@ -1,0 +1,9 @@
+nltk
+numpy
+opencv_python
+pygame
+pyperlin
+showtens
+torch
+torchenhanced
+tqdm
