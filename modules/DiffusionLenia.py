@@ -27,7 +27,7 @@ class DiffusionLenia(MCLenia):
         """
             Steps the alife model by one time step
         """
-        B,C,H,W = self.state.shape
+        """B,C,H,W = self.state.shape
         Aff = self.compute_affinity()
     
         Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
@@ -37,7 +37,20 @@ class DiffusionLenia(MCLenia):
         state_portions = self.state/Z
         state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
         state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
-        self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
+        self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
+        B, C, H, W = self.state.shape
+
+        Aff  = self.compute_affinity()
+        Aff_exp = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        Aff_exp = F.unfold(Aff_exp, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+        E = Aff_exp.sum(dim=2)
+        E_exp = F.pad(E, (1, 1, 1, 1), mode="circular")
+        E_exp = F.unfold(E_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        state_exp = F.pad(self.state,(1,1,1,1), mode="circular")
+        state_exp = F.unfold(state_exp, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+
+
+        self.state = ((Aff[:,:,None,...]/E_exp)* state_exp).sum(dim=2)
 
     def compute_affinity(self):
         """
