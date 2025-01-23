@@ -24,7 +24,7 @@ class ArbitraryFunction(torch.nn.Module):
         super(ArbitraryFunction, self).__init__()
         self.num_harmonics = num_harmonics
         self.dims = dims
-        self.funcs = [Harmonics(random.uniform(0,num_harmonics), random.uniform(0,1), self.dims) for i in range(self.num_harmonics)]
+        self.funcs = [Harmonics(i, random.uniform(0,1), self.dims) for i in range(self.num_harmonics)]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         sums = torch.stack([func(x) for func in self.funcs]).sum(dim=0)
@@ -130,7 +130,7 @@ class MCLenia(DevModule):
         self.batch = self.mu.shape[0] # update batch size
         #self.kernel = self.compute_kernel() # (B,C,C,k_size,k_size)
 
-        self.k = self.kernel_gen(2).to(self.device)
+        self.k = self.kernel_gen(4).to(self.device)
 
         self.fft_kernel = self.kernel_to_fft(self.k) # (B,C,C,h,w)
 
@@ -146,6 +146,12 @@ class MCLenia(DevModule):
         func = ArbitraryFunction(num_func, (self.batch, self.C)).to(self.device)
         out = func(r)
         out = create_smooth_circular_mask(out, self.k_size//2)
+
+        summed = torch.sum(out, dim=(-1, -2), keepdim=True)  # (B,C,C,1,1)
+
+        # Avoid divisions by 0
+        summed = torch.where(summed < 1e-6, 1, summed)
+        out /= summed
         return out
     
     def norm_weights(self):
@@ -249,6 +255,7 @@ class MCLenia(DevModule):
         K = K.roll((-(self.k_size//2),-(self.k_size//2)),dims=(-1,-2)) # (B,C,C,h,w)
 
         K = torch.fft.fft2(K) # (B,C,C,h,w)
+
 
         return K #(B,C,C,h,w)
 
