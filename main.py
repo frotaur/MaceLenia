@@ -10,7 +10,7 @@ from modules.utils import LeniaParams
 from modules.utils.main_utils import compute_ker
 
 #============================== PARAMETERS ==========================================================
-device = 'cuda' # Device on which to run the automaton
+device = 'cuda:0' # Device on which to run the automaton
 W,H = 512,512 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3

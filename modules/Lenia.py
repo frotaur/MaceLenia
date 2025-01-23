@@ -3,7 +3,38 @@ import numpy as np
 from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
 from .utils.leniaparams import LeniaParams
+from .utils.main_utils import create_smooth_circular_mask
 from showtens import show_image
+import random
+class Harmonics(torch.nn.Module):
+    def __init__(self, harmonic: float, coefficient:float, dims: tuple):
+        super(Harmonics, self).__init__()
+        b,c = dims
+        self.harmonic = torch.nn.Parameter(torch.randn(b,c,c, device="cuda:0")) * harmonic
+        self.coefficient = torch.nn.Parameter(torch.randn(b,c,c, device="cuda:0")) * coefficient
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        num_extra_dims  = x.ndim - self.harmonic.ndim
+        update  = -1*self.coefficient.view(*self.coefficient.shape, *[1] * num_extra_dims)*torch.exp(self.harmonic.view(*self.harmonic.shape, *[1] * num_extra_dims)*x *1j*torch.pi)
+        return update.real
+
+
+class ArbitraryFunction(torch.nn.Module):
+    def __init__(self, num_harmonics, dims: tuple):
+        super(ArbitraryFunction, self).__init__()
+        self.num_harmonics = num_harmonics
+        self.dims = dims
+        self.funcs = [Harmonics(random.uniform(0,num_harmonics), random.uniform(0,1), self.dims) for i in range(self.num_harmonics)]
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        sums = torch.stack([func(x) for func in self.funcs]).sum(dim=0)
+        shape = sums.shape
+        min_vals, _ = sums.reshape(shape[0], shape[1], shape[2], shape[3] * shape[4]).min(dim=-1, keepdim=True)
+        max_vals, _ = sums.reshape(shape[0], shape[1], shape[2], shape[3] * shape[4]).max(dim=-1, keepdim=True)
+        normalized_tensor = (sums - min_vals[..., None]) / (max_vals[..., None] - min_vals[..., None] + 1e-8)
+
+        return normalized_tensor
+
 
 
 class MCLenia(DevModule):
@@ -97,10 +128,25 @@ class MCLenia(DevModule):
         self.norm_weights()
 
         self.batch = self.mu.shape[0] # update batch size
-        self.kernel = self.compute_kernel() # (B,C,C,k_size,k_size)
+        #self.kernel = self.compute_kernel() # (B,C,C,k_size,k_size)
 
-        self.fft_kernel = self.kernel_to_fft(self.kernel) # (B,C,C,h,w)
+        self.k = self.kernel_gen(2).to(self.device)
 
+        self.fft_kernel = self.kernel_to_fft(self.k) # (B,C,C,h,w)
+
+
+    def kernel_gen(self,  num_func : int, ) -> torch.Tensor:
+
+        xyrange = torch.linspace(-1, 1, self.k_size).to(self.device)
+        X, Y = torch.meshgrid(xyrange, xyrange,
+                              indexing='xy')  # (k_size,k_size),  axis directions is x increasing to the right, y increasing to the bottom
+        r = torch.sqrt(X ** 2 + Y ** 2)
+        r = r.expand(self.batch, self.C, self.C, -1, -1)
+
+        func = ArbitraryFunction(num_func, (self.batch, self.C)).to(self.device)
+        out = func(r)
+        out = create_smooth_circular_mask(out, self.k_size//2)
+        return out
     
     def norm_weights(self):
         """
