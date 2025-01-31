@@ -1,4 +1,6 @@
 import torch,torch.nn,torch.nn.functional as F
+from PIL.ImageChops import overlay
+
 from .Lenia import MCLenia
 
 
@@ -8,7 +10,7 @@ class DiffusionLenia(MCLenia):
         of the diffusion equation
     """
 
-    def __init__(self, size, dt, num_channels=3, params=None, state_init=None, device='cpu'):
+    def __init__(self, size, dt, num_channels=3, params=None, state_init=None, device='cpu', has_food= False):
         """
             Args:
                 size : tuple, (C,H,W) size of the automaton
@@ -18,7 +20,7 @@ class DiffusionLenia(MCLenia):
                 state_init : tensor, initial state of the automaton
                 device : str, device to use
         """
-        super(DiffusionLenia, self).__init__(size, dt, num_channels, params, state_init, device=device)
+        super(DiffusionLenia, self).__init__(size, dt, num_channels, params, state_init, device=device, has_food=has_food)
 
         self._temp = 1
         self.Aff = self.compute_affinity()
@@ -40,6 +42,8 @@ class DiffusionLenia(MCLenia):
         self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
         B, C, H, W = self.state.shape
 
+
+
         Aff  = self.compute_affinity()
         Aff_exp = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
         Aff_exp = F.unfold(Aff_exp, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
@@ -51,6 +55,15 @@ class DiffusionLenia(MCLenia):
 
 
         self.state = ((Aff[:,:,None,...]/E_exp)* state_exp).sum(dim=2)
+        if self.has_food:
+            where_food = self.food_channel > 0  # Where the food channels are
+            where_contact = self.state[:,-1:,...] >0.1 # Where the eating channel is, we could amke this dynamic
+            overlap = where_food & where_contact  # where the channels overlap
+            transfer = torch.ones_like(where_food) * overlap * 0.01  # How much to increase / deacrease the mass currently set to 0.01
+            self.state[:,-1:,...] += transfer # Lenia mass increase
+            self.food_channel -= transfer # Food mass deacrease
+
+
 
     def compute_affinity(self):
         """
@@ -71,20 +84,29 @@ class DiffusionLenia(MCLenia):
     @temp.setter
     def temp(self, value):
         self._temp = value
-    
 
     def draw(self):
         """
             Draws the RGB worldmap from state.
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
-        toshow= self.state[0].permute((2,1,0)) # (W,H,C) for pygame
+        toshow = self.state[0].permute((2, 1, 0)).clone()  # (W,H,C) for pygame
+        if self.has_food:
+            foodtodraw = self.food_channel[0].permute((2, 1, 0)).clone()
 
-        if(self.C==1):
-            toshow = toshow.expand(-1,-1,3)
-        elif(self.C==2):
-            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=-1)
-        else :
-            toshow = toshow[:,:,:3]
-        
+        if (self.C == 1):
+            toshow = toshow.expand(-1, -1, 3)
+            if self.has_food:
+                toshow[:, :, -1] += foodtodraw
+        elif (self.C == 2):
+            toshow = torch.cat([toshow, torch.zeros_like(toshow)], dim=-1)
+            if self.has_food:
+                toshow[:, :, -1] += foodtodraw
+        else:
+            toshow = toshow[:, :, :3]
+            if self.has_food:
+                toshow[:, :, :] += foodtodraw
+
+
+
         self._worldmap= torch.clip(toshow,min=0,max=1).cpu().numpy()   

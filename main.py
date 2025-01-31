@@ -14,6 +14,7 @@ device = 'cuda:0' # Device on which to run the automaton
 W,H = 512,512 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
+has_food =  True
 
 interesting_dir = os.path.join('demo_params') # Directory containing the parameters to load when pressing 'm'
 # interesting_dir = os.path.join('data','latest_rand') 
@@ -41,7 +42,7 @@ else :
 
 # Initialize the automaton
 # auto = MCLenia((1,H,W), dt, params=params, num_channels=num_channels, device=device) # Uncomment for normal Lenia
-auto = DiffusionLenia((1,H,W), dt, num_channels=num_channels,device=device) # Uncomment for diffusion lenia
+auto = DiffusionLenia((1,H,W), dt, num_channels=num_channels,device=device, has_food=has_food) # Uncomment for diffusion lenia
 auto.to(device)
 
 # Initialize the pygame screen 

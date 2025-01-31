@@ -42,7 +42,7 @@ class MCLenia(DevModule):
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
         Does not support live drawing in pygame, maybe will later.
     """
-    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu' ):
+    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu', has_food = False ):
         """
             Initializes automaton.  
 
@@ -63,7 +63,7 @@ class MCLenia(DevModule):
         """
         super().__init__()
         self.to(device)
-
+        self.has_food = has_food
         self.batch= size[0]
         self.h, self.w  = size[1:]
         self.C = num_channels
@@ -83,6 +83,8 @@ class MCLenia(DevModule):
             self.set_init_fractal() # Fractal perlin init
         else:
             self.state = state_init.to(self.device) # Specific init
+
+
 
         self.dt = dt
 
@@ -123,6 +125,8 @@ class MCLenia(DevModule):
             self.k_size += 1
             print(f'Increased even kernel size to {self.k_size} to be odd')
 
+
+
         self.params = LeniaParams(param_dict=params, device=self.device)
 
         self.norm_weights()
@@ -134,6 +138,13 @@ class MCLenia(DevModule):
 
         self.fft_kernel = self.kernel_to_fft(self.k) # (B,C,C,h,w)
 
+    def get_food_pos(self , X, Y,batch, num_spots=100, food_size=5):
+        places = [[random.randint(food_size, X - food_size), random.randint(food_size, Y - food_size)] for _ in
+                  range(num_spots)]
+        x = torch.zeros((batch, 1, X, Y), device="cuda:0")
+        for place in places:
+            x[:,:,place[0] - food_size: place[0] + food_size, place[1] - food_size:place[1] + food_size] = 1
+        return x
 
     def kernel_gen(self,  num_func : int, ) -> torch.Tensor:
 
@@ -175,7 +186,9 @@ class MCLenia(DevModule):
             Max wavelength is k_size*1.5, chosen a bit randomly
         """
         self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
-                                    device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4) 
+                                    device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4)
+        if self.has_food:
+            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
     
     def set_init_perlin(self,wavelength=None):
         """
@@ -186,6 +199,9 @@ class MCLenia(DevModule):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
                             device=self.device,num_channels=self.C,black_prop=0.25)
+
+        if self.has_food:
+            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
     
     def set_init_circle(self,fractal=False, radius=None):
         if(radius is None):
@@ -199,6 +215,8 @@ class MCLenia(DevModule):
         X,Y = torch.meshgrid(torch.linspace(-self.h//2,self.h//2,self.h,device=self.device),torch.linspace(-self.w//2,self.w//2,self.w,device=self.device))
         R = torch.sqrt(X**2+Y**2)
         self.state = torch.where(R<radius,self.state,torch.zeros_like(self.state,device=self.device))
+        if self.has_food:
+            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
 
     def kernel_slice(self, r):
         """
@@ -280,6 +298,8 @@ class MCLenia(DevModule):
         """
             Steps the automaton state by one iteration.
         """
+
+
         U = self.get_fftconv(self.state) # (B,C,C,H,W)
 
         assert (self.h,self.w) == (U.shape[-2], U.shape[-1])
@@ -321,13 +341,21 @@ class MCLenia(DevModule):
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
         toshow= self.state[0].permute((2,1,0)) # (W,H,C) for pygame
+        if self.has_food:
+            foodtodraw = self.food_channel.permute((2,1,0))
 
         if(self.C==1):
             toshow = toshow.expand(-1,-1,3)
+            if self.has_food:
+                toshow[:,:,-1] += foodtodraw
         elif(self.C==2):
             toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=-1)
+            if self.has_food:
+                toshow[:,:,-1] += foodtodraw
         else :
             toshow = toshow[:,:,:3]
+            if self.has_food:
+                toshow[:,:,:] += foodtodraw
     
         self._worldmap= toshow.cpu().numpy()   
     
