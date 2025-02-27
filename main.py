@@ -11,7 +11,7 @@ from modules.utils.main_utils import compute_ker
 
 #============================== PARAMETERS ==========================================================
 device = 'cuda:0' # Device on which to run the automaton
-W,H = 512,512 # Size of the automaton
+W,H = 1920,1080 # Size of the automaton
 dt = 0.1 # Time step size
 num_channels= 3
 has_food =  True

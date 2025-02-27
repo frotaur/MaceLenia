@@ -60,14 +60,15 @@ class DiffusionLenia(MCLenia):
         if self.has_food:
             """uncomment the death sections for death mechanics, but its finicky and i dont like it """
             where_food = self.food_channel > 0  # Where the food channels are
-            where_contact = self.state[:,-1:,...] >0.1 # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
-            #death = ((self.state[:,-1:,...] <0.01) & (self.state[:,-1:,...] >0)) * self.state[:,-1:,...] death of the feeding channle, very finicky
+            where_contact = self.state.sum(dim=1)[:,None,:,:] >0.1 # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
+            death = ((self.state.sum(dim=1)[:,None,:,:] <0.01) & (self.state.sum(dim=1)[:,None,:,:] >0)) * self.state #death of the feeding channle, very finicky
+
             overlap = where_food & where_contact  # where the channels overlap
-            transfer = torch.ones_like(where_food) * overlap * 0.01  # How much to increase / deacrease the mass currently set to 0.01
-            self.state[:,-1:,...] += transfer # Lenia mass increase
-            #self.state[:,-1:,...] -= death
+            transfer = torch.ones_like(where_food) * overlap * 0.03  # How much to increase / deacrease the mass currently set to 0.01
+            self.state += transfer # Lenia mass increase
+            self.state -= death
             self.food_channel -= transfer # Food mass deacrease
-            #self.food_channel += death
+            self.food_channel += death.sum(dim=1)[:,None,:,:]/3
 
 
 
