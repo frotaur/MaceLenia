@@ -3,7 +3,7 @@
 """
 
 from modules.Lenia import MCLenia
-from modules.utils import LeniaParams
+from modules.main_utils import LeniaParams
 import torch, cv2,numpy as np, os
 from showtens import gridify
 from tqdm import tqdm

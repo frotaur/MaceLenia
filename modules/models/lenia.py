@@ -3,15 +3,16 @@ import numpy as np
 from torchenhanced import DevModule
 from .utils.noise_gen import perlin,perlin_fractal
 from .utils.leniaparams import LeniaParams
-from .utils.main_utils import create_smooth_circular_mask
-from showtens import show_image
-import random
+import random, pygame
+from .automaton import Automaton
+from pathlib import Path
+
 class Harmonics(torch.nn.Module):
-    def __init__(self, harmonic: float, coefficient:float, dims: tuple):
+    def __init__(self, harmonic: float, coefficient:float, dims: tuple, device='cpu'):
         super(Harmonics, self).__init__()
         b,c = dims
-        self.harmonic = torch.nn.Parameter(torch.randn(b,c,c, device="cuda:0")) * harmonic
-        self.coefficient = torch.nn.Parameter(torch.randn(b,c,c, device="cuda:0")) * coefficient
+        self.harmonic = torch.nn.Parameter(torch.randn(b,c,c, device=device)) * harmonic
+        self.coefficient = torch.nn.Parameter(torch.randn(b,c,c, device=device)) * coefficient
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         num_extra_dims  = x.ndim - self.harmonic.ndim
@@ -20,11 +21,11 @@ class Harmonics(torch.nn.Module):
 
 
 class ArbitraryFunction(torch.nn.Module):
-    def __init__(self, num_harmonics, dims: tuple):
+    def __init__(self, num_harmonics, dims: tuple, device='cpu'):
         super(ArbitraryFunction, self).__init__()
         self.num_harmonics = num_harmonics
         self.dims = dims
-        self.funcs = [Harmonics(i, random.uniform(0,1), self.dims) for i in range(self.num_harmonics)]
+        self.funcs = [Harmonics(i, random.uniform(0,1), self.dims,device=device) for i in range(self.num_harmonics)]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         sums = torch.stack([func(x) for func in self.funcs]).sum(dim=0)
@@ -37,12 +38,13 @@ class ArbitraryFunction(torch.nn.Module):
 
 
 
-class MCLenia(DevModule):
+class MCLenia(DevModule, Automaton):
     """
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
         Does not support live drawing in pygame, maybe will later.
     """
-    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu', has_food = False ):
+    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu', has_food = False,
+                 interest_files = None, save_dir = '.' ):
         """
             Initializes automaton.  
 
@@ -61,7 +63,8 @@ class MCLenia(DevModule):
                     'weights' : (B,kmult*C,C) float, weights for the growth weighted sum
                 device : str, device 
         """
-        super().__init__()
+        DevModule.__init__(self)
+        Automaton.__init__(self, size[1:])
         self.to(device)
         self.has_food = has_food
         self.batch= size[0]
@@ -98,6 +101,15 @@ class MCLenia(DevModule):
         self.register_buffer('kernel',torch.zeros((self.k_size,self.k_size)))
 
         self.update_params(self.params)
+
+        # For interactivity and visualization
+        self.display_kernel = False
+        self.save_dir = save_dir
+        if(interest_files is not None):
+            self.interest_files = [file_path.as_posix() for file_path in Path(interest_files).rglob('*.pt')]
+        else:
+            self.interest_files=None
+        self.chosen_interesting = 0
 
     def update_params(self, params, k_size_override = None):
         """
@@ -141,7 +153,7 @@ class MCLenia(DevModule):
     def get_food_pos(self , X, Y,batch, num_spots=100, food_size=5):
         places = [[random.randint(food_size, X - food_size), random.randint(food_size, Y - food_size)] for _ in
                   range(num_spots)]
-        x = torch.zeros((batch, 1, X, Y), device="cuda:0")
+        x = torch.zeros((batch, 1, X, Y), device=self.device)
         for place in places:
             x[:,:,place[0] - food_size: place[0] + food_size, place[1] - food_size:place[1] + food_size] = 1
         return x
@@ -154,7 +166,7 @@ class MCLenia(DevModule):
         r = torch.sqrt(X ** 2 + Y ** 2)
         r = r.expand(self.batch, self.C, self.C, -1, -1)
 
-        func = ArbitraryFunction(num_func, (self.batch, self.C)).to(self.device)
+        func = ArbitraryFunction(num_func, (self.batch, self.C),device=self.device)
         out = func(r)
         out = create_smooth_circular_mask(out, self.k_size//2)
 
@@ -293,7 +305,7 @@ class MCLenia(DevModule):
 
         return 2*torch.exp(-((u-mu)**2/(sigma)**2)/2)-1 #(B,C,C,H,W)
 
-
+    @torch.no_grad()
     def step(self):
         """
             Steps the automaton state by one iteration.
@@ -335,6 +347,7 @@ class MCLenia(DevModule):
 
         return self.state.mean(dim=(-1,-2)) # (B,C) mean mass for each color
 
+    @torch.no_grad()
     def draw(self):
         """
             Draws the RGB worldmap from state.
@@ -356,10 +369,113 @@ class MCLenia(DevModule):
             toshow = toshow[:,:,:3]
             if self.has_food:
                 toshow[:,:,:] += foodtodraw
-    
+
+        if self.display_kernel == True:
+            kern = self.compute_ker() # (C,3,k_size,k_size)
+            self.worldmap[:self.k_size, self.h-self.k_size:self.h,:] =  kern[0].cpu()
+            self.worldmap[self.k_size:2*self.k_size, self.h-self.k_size:self.h,:] =  kern[1].cpu()  
+            self.worldmap[2*self.k_size:3*self.k_size, self.h-self.k_size:self.h,:] =  kern[2].cpu()  
+
         self._worldmap= toshow.cpu().numpy()   
+
+
     
+    def process_event(self, event, camera=None):
+        """
+            N -> New random parameters
+            M -> Load new interesting param
+            U -> Variate around parameters
+            I -> Intialize with fractal perlin
+            J -> Initialize with perlin
+            O -> Initialize with circle
+            L -> Initialize with random wavelength perlin
+            S -> Save the current parameters
+            K -> Toggle display kernel
+            DEL -> sets state to 0
+        """
+        if event.type == pygame.KEYDOWN:
+            if(event.key == pygame.K_n):
+                """ New random parameters"""
+                # params = param_gen(device)
+                params = LeniaParams.random_gen(batch_size=1,num_channels=self.C,device=self.device,k_size=31)
+                # Probably should put the lines below in a function
+                self.update_params(params,k_size_override=None)
+            if(event.key == pygame.K_u):
+                """ Variate around parameters"""
+                params = params.mutate(magnitude=0.1,rate=0.8)
+                self.update_params(params,k_size_override=None)
+            if(event.key == pygame.K_i):
+                # Intialize with fractal perlin
+                self.set_init_fractal()
+            if(event.key == pygame.K_j):
+                # Initialize with perlin
+                self.set_init_perlin()
+            if(event.key == pygame.K_o):
+                self.set_init_circle()
+            if(event.key == pygame.K_l):
+                # Initialize with random wavelength perlin
+                sq_size = random.randint(5,min(self.h,self.w))
+                self.set_init_perlin(wavelength=sq_size)
+            if(event.key == pygame.K_m):
+                if(self.interest_files):
+                    # Load random interesting param, if we have some
+                    file = self.interest_files[self.chosen_interesting] # To add as parameter
+                    chosen_interesting = (self.chosen_interesting+1)%len(self.interest_files)
+
+                    params = LeniaParams(from_file=file, device=self.device)
+                    self.update_params(params,k_size_override=None)
+                    print('Loaded : ',  file)
+            if(event.key == pygame.K_s):
+                # Save the current parameters to remarkable dir :
+                para = self.get_params()
+                para.save_indiv(self.save_dir,annotation=['_nice'])
+            if(event.key == pygame.K_k):
+                # Toggle display kernel
+                self.display_kernel = not self.display_kernel
+            if(event.key == pygame.K_DELETE | pygame.K_BACKSPACE):
+                self.state = torch.zeros_like(self.state)
+
+    #Extra util functions 
+    def compute_ker(self):
+        """
+            Prepares the kernel and translate it to an RGB image for viewing.
+
+            returns :
+            kern : (C,3,k_size,k_size) tensor, kernel as
+        """
+        kern= self.k[0].detach() # (C,C, k_size, k_size), removed batch
+
+        if(kern.shape[1]==1):
+            kern = kern.expand(1,3,-1,-1)
+        elif(kern.shape[1]>3):
+            kern = kern[:,:3] # Cut, and include only the first set of kernels
+
+        maxs = torch.tensor((torch.max(kern[0]), torch.max(kern[1]), torch.max(kern[2])), device=self.device)
+        # print(maxs)
+        maxs = maxs[:,None,None,None]
+        kern = kern/maxs 
+
+        return kern # (C,3,k_size,k_size)
         
     @property
     def worldmap(self):
         return (255*self._worldmap).astype(dtype=np.uint8)
+    
+
+
+
+
+
+
+def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:
+    H, W = tensor.shape[-2], tensor.shape[-1]
+    center_y = (H - 1) / 2  # Allow fractional center for better smoothness
+    center_x = (W - 1) / 2
+    y = torch.linspace(0, H - 1, H, device=tensor.device).view(-1, 1)
+    x = torch.linspace(0, W - 1, W, device=tensor.device).view(1, -1)
+    distance = ((y - center_y) ** 2 + (x - center_x) ** 2).sqrt()
+    smooth_transition = 0.5  # Define a region for the smooth transition (around the edge of the circle)
+    mask = torch.clamp(1 - (distance - radius) / smooth_transition, 0, 1)
+    masked_tensor = tensor * mask
+
+    return masked_tensor

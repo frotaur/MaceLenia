@@ -6,7 +6,7 @@ from modules import MCLenia, LeniaParams
 import os
 from tqdm import tqdm
 import torch
-from modules.utils.main_utils import load_params
+from modules.main_utils.main_utils import load_params
 
 # param_dir = 'data/latest_rand/individual' # Directory containing the individual (unbatched) parameters
 out_dir = 'data/more_videos' # Directory to save the videos

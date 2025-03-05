@@ -1,30 +1,31 @@
 import torch,torch.nn,torch.nn.functional as F
 from PIL.ImageChops import overlay
-
-from .Lenia import MCLenia
+import pygame
+from .lenia import MCLenia
+from textwrap import dedent
 
 
 class DiffusionLenia(MCLenia):
     """
-        Mass conserving Lenia-like Alife model, inspired from the discretization
-        of the diffusion equation
+        Mass conserving Lenia-like Alife model
     """
 
     def __init__(self, size, dt, num_channels=3, params=None, state_init=None, device='cpu', has_food= False):
         """
             Args:
-                size : tuple, (C,H,W) size of the automaton
+                size : tuple, (B,H,W) size of the automaton
                 dt : float, time step size
                 num_channels : int, number of channels
                 params : dict, parameters of the automaton
                 state_init : tensor, initial state of the automaton
                 device : str, device to use
         """
-        super(DiffusionLenia, self).__init__(size, dt, num_channels, params, state_init, device=device, has_food=has_food)
+        super().__init__(size, dt, num_channels, params, state_init, device=device, has_food=has_food)
 
         self._temp = 1
         self.Aff = self.compute_affinity()
-
+    
+    @torch.no_grad()
     def step(self):
         """
             Steps the alife model by one time step
@@ -92,6 +93,24 @@ class DiffusionLenia(MCLenia):
     def temp(self, value):
         self._temp = value
 
+    def process_event(self, event, camera=None):
+        """     
+            UP -> Increase temperature
+            DOWN -> Decrease temperature
+        """
+        super().process_event(event, camera)
+        if event.type == pygame.KEYDOWN:
+            if(event.key == pygame.K_UP):
+                self.temp +=0.2
+            if(event.key == pygame.K_DOWN):
+                self.temp -=0.2
+    
+    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip('\n') + process_event.__doc__.lstrip('\n') # Hack to append the docstring of MCLenia.process_event
+    
+    def get_string_state(self):
+        return f"total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}"
+
+    @torch.no_grad()
     def draw(self):
         """
             Draws the RGB worldmap from state.

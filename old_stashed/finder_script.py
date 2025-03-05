@@ -4,8 +4,8 @@
     To use, choose the parameters on top, and potentially modify param_generator, then run the script.
 """
 import torch, math
-from modules.utils.finder_utils import search_transition
-from modules.utils import LeniaParams
+from modules.models.utils.finder_utils import search_transition
+from modules.main_utils import LeniaParams
 #============================== PARAMETERS ==========================================================
 
 # Where to save the found parameters

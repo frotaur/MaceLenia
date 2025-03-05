@@ -1,6 +1,6 @@
 import torch
 import math, os
-from ..utils import params_to_words
+from .hash_params import params_to_words
 
 class BatchParams():
     """
