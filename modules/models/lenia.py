@@ -382,8 +382,8 @@ class MCLenia(DevModule, Automaton):
                 self.update_params(params,k_size_override=None)
             if(event.key == pygame.K_u):
                 """ Variate around parameters"""
-                params = params.mutate(magnitude=0.1,rate=0.8)
-                self.update_params(params,k_size_override=None)
+                mutated_params = self.params.mutate(magnitude=0.1,rate=0.8)
+                self.update_params(mutated_params,k_size_override=None)
             if(event.key == pygame.K_i):
                 # Intialize with fractal perlin
                 self.set_init_fractal()
