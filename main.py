@@ -20,7 +20,13 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
-            (1, h, w), dt=0.1, num_channels=3, device=device, has_food=True
+            (1, h, w),
+            dt=0.1,
+            num_channels=3,
+            device=device,
+            has_food=True,
+            save_dir="saved_diff_lenia",
+            interest_files=(cur_dir / "demo_params").as_posix(),
         ),
         "Lenia": lambda h, w: MCLenia(
             (1, h, w),

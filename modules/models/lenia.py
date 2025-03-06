@@ -43,7 +43,7 @@ class MCLenia(DevModule, Automaton):
         Batched Multi-channel lenia, to run batch_size worlds in parallel !
         Does not support live drawing in pygame, maybe will later.
     """
-    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu', has_food = False,
+    def __init__(self, size, dt, num_channels=3, params=None, state_init = None, device='cpu',
                  interest_files = None, save_dir = '.' ):
         """
             Initializes automaton.  
@@ -66,7 +66,6 @@ class MCLenia(DevModule, Automaton):
         DevModule.__init__(self)
         Automaton.__init__(self, size[1:])
         self.to(device)
-        self.has_food = has_food
         self.batch= size[0]
         self.h, self.w  = size[1:]
         self.C = num_channels
@@ -144,22 +143,17 @@ class MCLenia(DevModule, Automaton):
         self.norm_weights()
 
         self.batch = self.mu.shape[0] # update batch size
-        #self.kernel = self.compute_kernel() # (B,C,C,k_size,k_size)
+        # self.k = self.compute_kernel() # (B,C,C,k_size,k_size)
 
         self.k = self.kernel_gen(4).to(self.device)
 
         self.fft_kernel = self.kernel_to_fft(self.k) # (B,C,C,h,w)
 
-    def get_food_pos(self , X, Y,batch, num_spots=100, food_size=5):
-        places = [[random.randint(food_size, X - food_size), random.randint(food_size, Y - food_size)] for _ in
-                  range(num_spots)]
-        x = torch.zeros((batch, 1, X, Y), device=self.device)
-        for place in places:
-            x[:,:,place[0] - food_size: place[0] + food_size, place[1] - food_size:place[1] + food_size] = 1
-        return x
 
     def kernel_gen(self,  num_func : int, ) -> torch.Tensor:
-
+        """
+            Generates a kernel using the specified number of functions
+        """
         xyrange = torch.linspace(-1, 1, self.k_size).to(self.device)
         X, Y = torch.meshgrid(xyrange, xyrange,
                               indexing='xy')  # (k_size,k_size),  axis directions is x increasing to the right, y increasing to the bottom
@@ -199,9 +193,7 @@ class MCLenia(DevModule, Automaton):
         """
         self.state = perlin_fractal((self.batch,self.h,self.w),int(self.k_size*1.5),
                                     device=self.device,black_prop=0.25,num_channels=self.C,persistence=0.4)
-        if self.has_food:
-            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
-    
+
     def set_init_perlin(self,wavelength=None):
         """
             Sets initial state using one-wavelength perlin noise.
@@ -211,9 +203,6 @@ class MCLenia(DevModule, Automaton):
             wavelength = self.k_size
         self.state = perlin((self.batch,self.h,self.w),[wavelength]*2,
                             device=self.device,num_channels=self.C,black_prop=0.25)
-
-        if self.has_food:
-            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
     
     def set_init_circle(self,fractal=False, radius=None):
         if(radius is None):
@@ -227,8 +216,7 @@ class MCLenia(DevModule, Automaton):
         X,Y = torch.meshgrid(torch.linspace(-self.h//2,self.h//2,self.h,device=self.device),torch.linspace(-self.w//2,self.w//2,self.w,device=self.device))
         R = torch.sqrt(X**2+Y**2)
         self.state = torch.where(R<radius,self.state,torch.zeros_like(self.state,device=self.device))
-        if self.has_food:
-            self.food_channel = self.get_food_pos(self.h, self.w, self.batch) # (B,1, H,W)
+
 
     def kernel_slice(self, r):
         """
@@ -353,31 +341,23 @@ class MCLenia(DevModule, Automaton):
             Draws the RGB worldmap from state.
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
-        toshow= self.state[0].permute((2,1,0)) # (W,H,C) for pygame
-        if self.has_food:
-            foodtodraw = self.food_channel.permute((2,1,0))
+
+        toshow= self.state[0].clone() # (C,H,W), pygame conversion done later
 
         if(self.C==1):
-            toshow = toshow.expand(-1,-1,3)
-            if self.has_food:
-                toshow[:,:,-1] += foodtodraw
+            toshow = toshow.expand(3,-1,-1) # (3,H,W)
         elif(self.C==2):
-            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=-1)
-            if self.has_food:
-                toshow[:,:,-1] += foodtodraw
+            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=0) # (3,H,W)
         else :
-            toshow = toshow[:,:,:3]
-            if self.has_food:
-                toshow[:,:,:] += foodtodraw
+            toshow = toshow[:3,:,:] # (3,H,W)
 
         if self.display_kernel == True:
             kern = self.compute_ker() # (C,3,k_size,k_size)
-            self.worldmap[:self.k_size, self.h-self.k_size:self.h,:] =  kern[0].cpu()
-            self.worldmap[self.k_size:2*self.k_size, self.h-self.k_size:self.h,:] =  kern[1].cpu()  
-            self.worldmap[2*self.k_size:3*self.k_size, self.h-self.k_size:self.h,:] =  kern[2].cpu()  
+            toshow[:, self.h-self.k_size:self.h,:self.k_size] =  kern[0].cpu()
+            toshow[:,self.h-self.k_size:self.h,self.k_size:2*self.k_size] =  kern[1].cpu()  
+            toshow[:,self.h-self.k_size:self.h,2*self.k_size:3*self.k_size] =  kern[2].cpu()  
 
-        self._worldmap= toshow.cpu().numpy()   
-
+        self._worldmap= torch.clamp(toshow,0.,1.) 
 
     
     def process_event(self, event, camera=None):
@@ -420,7 +400,7 @@ class MCLenia(DevModule, Automaton):
                 if(self.interest_files):
                     # Load random interesting param, if we have some
                     file = self.interest_files[self.chosen_interesting] # To add as parameter
-                    chosen_interesting = (self.chosen_interesting+1)%len(self.interest_files)
+                    self.chosen_interesting = (self.chosen_interesting+1)%len(self.interest_files)
 
                     params = LeniaParams(from_file=file, device=self.device)
                     self.update_params(params,k_size_override=None)
@@ -435,7 +415,6 @@ class MCLenia(DevModule, Automaton):
             if(event.key == pygame.K_DELETE | pygame.K_BACKSPACE):
                 self.state = torch.zeros_like(self.state)
 
-    #Extra util functions 
     def compute_ker(self):
         """
             Prepares the kernel and translate it to an RGB image for viewing.
@@ -456,11 +435,7 @@ class MCLenia(DevModule, Automaton):
         kern = kern/maxs 
 
         return kern # (C,3,k_size,k_size)
-        
-    @property
-    def worldmap(self):
-        return (255*self._worldmap).astype(dtype=np.uint8)
-    
+
 
 
 
