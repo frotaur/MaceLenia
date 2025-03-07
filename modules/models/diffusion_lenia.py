@@ -175,7 +175,7 @@ class DiffusionLenia(MCLenia):
         toshow= self.state[0].clone() # (C,H,W), pygame conversion done later
 
         if(self.C==1):
-            toshow = toshow.expand(3,-1,-1) # (3,H,W)
+            toshow = toshow.repeat(3,1,1) # (3,H,W)
         elif(self.C==2):
             toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=0) # (3,H,W)
         else :
@@ -185,10 +185,11 @@ class DiffusionLenia(MCLenia):
             toshow[:,:,:] += self.food_channel[0]# (1,H,W)
 
         if self.display_kernel == True:
-            kern = self.compute_ker() # (C,3,k_size,k_size)
-            toshow[:, self.h-self.k_size:self.h,:self.k_size] =  kern[0].cpu()
-            toshow[:,self.h-self.k_size:self.h,self.k_size:2*self.k_size] =  kern[1].cpu()  
-            toshow[:,self.h-self.k_size:self.h,2*self.k_size:3*self.k_size,] =  kern[2].cpu()  
+            kern = self.compute_ker()  # (C,3,k_size,k_size)
+            for i in range(kern.shape[0]):
+                toshow[:, self.h - self.k_size : self.h, i * self.k_size : (i + 1) * self.k_size] = kern[
+                    i
+                ].cpu()
 
         self._worldmap= torch.clamp(toshow,0.,1.) 
 

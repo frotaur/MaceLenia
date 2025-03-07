@@ -22,7 +22,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         "DiffusionLenia": lambda h, w: DiffusionLenia(
             (1, h, w),
             dt=0.1,
-            num_channels=3,
+            num_channels=1,
             device=device,
             has_food=False,
             save_dir="saved_diff_lenia",

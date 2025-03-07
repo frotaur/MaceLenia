@@ -366,8 +366,8 @@ class LeniaParams(BatchParams):
                 g_bounds : tuple, bounds for the growth function
                 device : device on which to generate the parameters
         """
-        k_arbi = ArbitraryFunction(func_num = batch_size*3*3, num_harmonics=k_harmonics) # Generate random
-        g_arbi = ArbitraryFunction(func_num = batch_size*3*3, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
+        k_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics) # Generate random
+        g_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
         
         params ={
                 'k_size' : k_size,
