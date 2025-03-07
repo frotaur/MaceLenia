@@ -1,8 +1,6 @@
 import torch, torch.nn, torch.nn.functional as F
-from PIL.ImageChops import overlay
 import pygame
 from .lenia import MCLenia
-from textwrap import dedent
 import random
 
 class DiffusionLenia(MCLenia):
@@ -84,7 +82,7 @@ class DiffusionLenia(MCLenia):
             )  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
             death = (
                 (self.state.sum(dim=1)[:, None, :, :] < 0.01) & (self.state.sum(dim=1)[:, None, :, :] > 0)
-            ) * self.state  # death of the feeding channle, very finicky
+            ) * self.state  # death of the feeding channel, very finicky
 
             overlap = where_food & where_contact  # where the channels overlap
             transfer = (
@@ -99,7 +97,7 @@ class DiffusionLenia(MCLenia):
         """
         Computes the affinity matrix of the model
         """
-        Aff = self.get_fftconv(self.state)  # (B,C,C,H,W) first step affinity, usual convolutions
+        Aff = self.kernel_fftconv(self.state)  # (B,C,C,H,W) first step affinity, usual convolutions
 
         weights = self.weights[..., None, None]  # (B,C,C,1,1)
         Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
