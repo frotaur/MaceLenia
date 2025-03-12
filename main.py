@@ -6,6 +6,8 @@ from modules.main_utils import launch_video, add_frame, print_screen
 from modules.main_utils import TextBlock, DropdownMenu, InputField, render_text_blocks
 from pathlib import Path
 
+from modules.models.flow_lenia import FlowLenia
+
 cur_dir = Path(__file__).parent
 font_path = (cur_dir / "modules" / "main_utils" / "interface" / "AldotheApache.ttf").as_posix()
 std_help = (cur_dir / "modules" / "main_utils" / "interface" / "std_help.json").as_posix()
@@ -22,9 +24,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         "DiffusionLenia": lambda h, w: DiffusionLenia(
             (1, h, w),
             dt=0.1,
-            num_channels=1,
+            num_channels=3,
             device=device,
-            has_food=False,
+            has_food=True,
             save_dir="saved_diff_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
         ),
@@ -35,7 +37,17 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             save_dir="saved_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
+
         ),
+        "FlowLenia": lambda h, w: FlowLenia(
+            (1, h, w),
+            dt=0.1,
+            num_channels=3,
+            save_dir="saved_lenia",
+            interest_files=(cur_dir / "demo_params").as_posix(),
+            device=device,
+            has_food=True,
+            ),
     }
     sW, sH = screen
 

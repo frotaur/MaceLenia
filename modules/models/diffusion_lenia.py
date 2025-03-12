@@ -1,5 +1,7 @@
 import torch, torch.nn, torch.nn.functional as F
 import pygame
+from nltk.downloader import update
+
 from .lenia import MCLenia
 import random
 
@@ -45,7 +47,7 @@ class DiffusionLenia(MCLenia):
         self._temp = 1
         self.Aff = self.compute_affinity()
         
-    @torch.no_grad()
+
     def step(self):
         """
         Steps the alife model by one time step
@@ -75,23 +77,28 @@ class DiffusionLenia(MCLenia):
         self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
 
         if self.has_food:
-            """uncomment the death sections for death mechanics, but its finicky and i dont like it """
-            where_food = self.food_channel > 0  # Where the food channels are
-            where_contact = (
-                self.state.sum(dim=1)[:, None, :, :] > 0.1
-            )  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
-            death = (
-                (self.state.sum(dim=1)[:, None, :, :] < 0.01) & (self.state.sum(dim=1)[:, None, :, :] > 0)
-            ) * self.state  # death of the feeding channel, very finicky
+            self.update_food()
 
-            overlap = where_food & where_contact  # where the channels overlap
-            transfer = (
+
+
+    def update_food(self):
+        """uncomment the death sections for death mechanics, but its finicky and i dont like it """
+        where_food = self.food_channel > 0  # Where the food channels are
+        where_contact = (
+                self.state.sum(dim=1)[:, None, :, :] > 0.1
+        )  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
+        death = (
+                        (self.state.sum(dim=1)[:, None, :, :] < 0.01) & (self.state.sum(dim=1)[:, None, :, :] > 0)
+                ) * self.state  # death of the feeding channel, very finicky
+
+        overlap = where_food & where_contact  # where the channels overlap
+        transfer = (
                 torch.ones_like(where_food) * overlap * 0.03
-            )  # How much to increase / deacrease the mass currently set to 0.01
-            self.state += transfer  # Lenia mass increase
-            self.state -= death
-            self.food_channel -= transfer  # Food mass deacrease
-            self.food_channel += death.sum(dim=1)[:, None, :, :] / 3
+        )  # How much to increase / deacrease the mass currently set to 0.01
+        self.state += transfer  # Lenia mass increase
+        self.state -= death
+        self.food_channel -= transfer  # Food mass deacrease
+        self.food_channel += death.sum(dim=1)[:, None, :, :] / 3
 
     def compute_affinity(self):
         """

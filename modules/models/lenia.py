@@ -25,6 +25,7 @@ class MCLenia(DevModule, Automaton):
         device="cpu",
         interest_files=None,
         save_dir=".",
+
     ):
         """
         Initializes automaton.
@@ -53,6 +54,7 @@ class MCLenia(DevModule, Automaton):
         DevModule.__init__(self)
         Automaton.__init__(self, size[1:])
         self.to(device)
+
         self.batch = size[0]
         self.h, self.w = size[1:]
         self.C = num_channels
@@ -300,6 +302,9 @@ class MCLenia(DevModule, Automaton):
             sigma = sigma.expand(-1, -1, -1, self.h, self.w)  # (B,C,C,H,W)
             growth = lambda u: 2 * torch.exp(-((u - mu) ** 2 / (sigma) ** 2) / 2) - 1
             return growth
+
+
+
 
     @torch.no_grad()
     def step(self):
