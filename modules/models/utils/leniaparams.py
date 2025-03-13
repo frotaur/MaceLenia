@@ -140,6 +140,8 @@ class BatchParams():
     def __truediv__(self, scalar: float)-> 'BatchParams':
         return self.__mul__(1./scalar)
 
+    def __contains__(self, key):
+        return key in self.param_dict.keys()
     def __getitem__(self, idx):
         """
             Works as a dictionary, indexing the parameters with strings, or
