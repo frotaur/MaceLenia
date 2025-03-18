@@ -24,7 +24,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             dt=0.1,
             num_channels=3,
             device=device,
-            has_food=True,
+            has_food=False,
             save_dir="saved_diff_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
         ),

@@ -7,7 +7,7 @@ import random, pygame
 from .automaton import Automaton
 from pathlib import Path
 from .utils.funcgen import ArbitraryFunction
-
+from copy import deepcopy
 
 class MCLenia(DevModule, Automaton):
     """
@@ -128,6 +128,10 @@ class MCLenia(DevModule, Automaton):
         if self.k_size % 2 == 0:
             self.k_size += 1
             print(f"Increased even kernel size to {self.k_size} to be odd")
+
+        if('state' in params):
+            self._load_state(params['state']) #
+            del params['state'] # Remove state from params
 
         self.params = LeniaParams(param_dict=params, device=self.device)
 
@@ -427,8 +431,13 @@ class MCLenia(DevModule, Automaton):
                     self.update_params(params, k_size_override=None)
                     print("Loaded : ", file)
             if event.key == pygame.K_s:
-                # Save the current parameters to remarkable dir :
-                self.params.save_indiv(self.save_dir, annotation=["_nice"])
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    # Save current state + parameters
+                    self._save_with_state(self.save_dir)
+                else:
+                    # Save the current parameters to remarkable dir :
+                    self.params.save_indiv(self.save_dir, annotation=["_nice"])
+            
             if event.key == pygame.K_k:
                 # Toggle display kernel
                 self.display_kernel = not self.display_kernel
@@ -456,6 +465,56 @@ class MCLenia(DevModule, Automaton):
 
         return kern  # (C,3,k_size,k_size)
 
+    def _save_with_state(self, path):
+        """
+            Saves the parameters of the automaton ALONG with the current state.
+        """
+        path = Path(path)  / "state_saves"
+        path.mkdir(parents=True, exist_ok=True)
+
+        to_save = deepcopy(self.params)
+        to_save.state = self.state
+        to_save.save_indiv(path, batch_name=True, annotation=["_state"])
+
+    def _load_state(self, state):
+        """"
+            Loads a state into the automaton, without breaking
+            if the provided state has a different shape than the automaton
+        """
+        B,C,H,W = state.shape
+        if not (B == self.batch or B == 1):
+            print("Skipping, batch size of state should match automaton or be 1")
+            return
+        if not (C == self.C):
+            print("Skipping, number of channels of state should match automaton")
+            return
+        if(H>self.h or W>self.w):
+            print("Warning, state will be clipped to automaton size")
+            if H > self.h:
+                clip_h = (H - self.h) // 2
+                extra_clip = 0 if (H - self.h) % 2 == 0 else 1
+                state = state[:, :, clip_h:H-clip_h-extra_clip, :] # Symmetrical clip
+                H = self.h
+            if W > self.w:
+                clip_w = (W - self.w) // 2
+                extra_clip = 0 if (W - self.w) % 2 == 0 else 1
+                state = state[:, :, :, clip_w:W-clip_w-extra_clip] # Symmetrical clip
+                W = self.w
+    
+        self.state = state[:,:,:self.h,:self.w]
+        
+        if(H<self.h):
+            pad_h = (self.h-H)//2
+        else:
+            pad_h = 0
+        if(W<self.w):
+            pad_w = (self.w-W)//2
+        else:
+            pad_w = 0
+        
+        self.state = F.pad(self.state, (pad_w,pad_w,pad_h,pad_h), mode='constant', value=0.0)
+
+        
 
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:
     H, W = tensor.shape[-2], tensor.shape[-1]

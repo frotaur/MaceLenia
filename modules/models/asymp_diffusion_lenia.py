@@ -60,8 +60,21 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
         """
         super().process_event(event, camera)
         if event.type == pygame.MOUSEWHEEL and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
-            if pygame.key.get_mods() & pygame.KMOD_ALT:
-                # Change dx while keeping dt/dx^2 constant when holding Alt
+            if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                # Change dx with shift + scroll
+                if event.y > 0:
+                    self.dx *= 1.1
+                else:
+                    self.dx *= 0.9
+                self.update_params(self.params)
+            elif pygame.key.get_mods() & pygame.KMOD_ALT:
+                # Change dt with scroll + Alt
+                if event.y > 0:
+                    self.dt *= 1.1
+                else:
+                    self.dt *= 0.9
+            else:
+                # Change dx while keeping dt/dx^2 constant when just scrolling
                 factor = self.dt/(self.dx**2)
                 if event.y > 0:
                     self.dx *= 1.1
@@ -69,20 +82,7 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
                     self.dx *= 0.9
                 self.dt = factor * self.dx**2
                 self.update_params(self.params)
-            elif pygame.key.get_mods() & pygame.KMOD_SHIFT:
-                # Change dx with shift + scroll
-                if event.y > 0:
-                    self.dx *= 1.1
-                else:
-                    self.dx *= 0.9
-                self.update_params(self.params)
-            else:
-                # Change dt with scroll
-                if event.y > 0:
-                    self.dt *= 1.1
-                else:
-                    self.dt *= 0.9
-                
+       
     process_event.__doc__ = DiffusionLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )

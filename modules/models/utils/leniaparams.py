@@ -78,7 +78,8 @@ class BatchParams():
             folder : path to folder where to save params individually
             params : dictionary of parameters
             batch_name : if True, names indiv parameters with batch name + annotation
-            annotation : list of same length as batch_size, an annotation of the parameters
+            annotation : list of same length as batch_size, an annotation of the parameters.
+                Only used if batch_name is True
         """
         os.makedirs(folder, exist_ok=True)
 
@@ -142,6 +143,7 @@ class BatchParams():
 
     def __contains__(self, key):
         return key in self.param_dict.keys()
+
     def __getitem__(self, idx):
         """
             Works as a dictionary, indexing the parameters with strings, or
