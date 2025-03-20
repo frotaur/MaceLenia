@@ -13,13 +13,14 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
     about the food dynamics in the continuous limit.
     """
 
-    def __init__(self, size, dt=0.01/3., dx=0.1, num_channels=3, params=None, state_init=None, device="cpu", interest_files=None, save_dir="."):
+    def __init__(self, size, dx=0.08, num_channels=3, params=None, state_init=None, device="cpu", interest_files=None, save_dir="."):
         self.dx = dx
-        super().__init__(size,dt,num_channels,params,state_init,device,False,interest_files,save_dir)
+        self.dt = dx**2/3 # Maximum dt for stability
 
+        super().__init__(size,self.dt,num_channels,params,state_init,device,False,interest_files,save_dir)
 
-        if (dt/(3*dx**2)<=1.):
-            print(f"Ensure dt/(3*dx**2)<=1 for stability, currently {dt/(3*dx**2)}")
+        print('k_size equivalent dx : ', self.compute_ksize())
+        print(f'Set dt={self.dt:.3f}  for stability')
 
     def compute_ksize(self):
         k_size = int(2/self.dx)
@@ -54,9 +55,9 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
 
     def process_event(self, event, camera=None):
         """
-            Wheel -> Change dt
-            Shift + Wheel -> Change dx
-            Alt + Wheel -> Change dx while keeping dt/dx^2 constant
+            Wheel -> Change dx, while keeping dt/dx^2 constant
+            Shift + Wheel -> Change dx only. Might become unstable
+            Alt + Wheel -> Change dt only. Might become unstable
         """
         super().process_event(event, camera)
         if event.type == pygame.MOUSEWHEEL and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
@@ -87,4 +88,4 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
         "\n"
     )
     def get_string_state(self):
-        return super().get_string_state() + f"dx={self.dx:.3f}, dt={self.dt:.3f}, factor={3*self.dt/(self.dx**2):.2f}"
+        return super().get_string_state() + f" dx={self.dx*1000:.2f}, dt={self.dt*100:.2f}/100, factor={3*self.dt/(self.dx**2):.2f}"

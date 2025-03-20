@@ -40,13 +40,13 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             (1, h, w),
             dt=0.1,
             num_channels=3,
-            save_dir="saved_lenia",
+            save_dir="saved_flow_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
             has_food=True,
         ),
         "AsymptoticDiffLenia": lambda h, w: AsymptoticDiffusionLenia(
-            size=(1,h, w), device=device, interest_files=(cur_dir / "demo_params").as_posix()
+            size=(1,h, w), device=device, interest_files=(cur_dir / "demo_params").as_posix(), save_dir='saved_diff_lenia'
         )
     }
     sW, sH = screen

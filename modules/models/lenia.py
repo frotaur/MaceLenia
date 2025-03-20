@@ -379,7 +379,7 @@ class MCLenia(DevModule, Automaton):
 
     def process_event(self, event, camera=None):
         """
-        N -> New random parameters
+        N (+ shift) -> New random parameters
         A -> Random parameters using ArbitraryFunction
         M -> Load new interesting param
         U -> Variate around parameters
@@ -393,12 +393,14 @@ class MCLenia(DevModule, Automaton):
         """
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n:
-                """ New random parameters"""
-                # params = param_gen(device)
-                params = LeniaParams.random_gen(
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    params = LeniaParams.default_gen(
                     batch_size=1, num_channels=self.C, device=self.device, k_size=31
                 )
-                # Probably should put the lines below in a function
+                else:
+                    params = LeniaParams.random_gen(
+                        batch_size=1, num_channels=self.C, device=self.device, k_size=31
+                    )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
                 params = LeniaParams.arbi_gen(
