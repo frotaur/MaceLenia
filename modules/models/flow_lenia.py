@@ -27,7 +27,7 @@ def sobel_y(x):
 
 def sobel(x):
     sx = sobel_x(x.to(torch.float32))
-    print(f"sx shape: {sx.shape}")
+
     sy = sobel_y(x.to(torch.float32))
     sxy = torch.cat((sy[:,:,:,None,:], sx[:,:,:,None,:]), dim= 3)
     return sxy
@@ -77,17 +77,17 @@ class ReintegrationTracker():
 
     def apply(self, grid, F):
         ma = self.dd - self.sigma
-        print(f"pos shape is {self.pos[..., None].shape}")
-        print(f"(self.dt*F).clip(-ma,ma) shape is {(self.dt * F).clip(-ma, ma).shape}")
+
         mu = self.pos[..., None] + (self.dt * F).clip(-ma, ma)
-        print(f"mu shape is {mu.shape}")
+
         mu = torch.clip(mu, self.sigma, self.X - self.sigma)
         ngrid = torch.stack([self.step(grid, mu, dx, dy) for dx, dy in zip(self.dxs, self.dys)])
-        print(f"ngrid shape is {ngrid.shape}")
+
 
         return ngrid.sum(dim=0)
 
 class FlowLenia(MCLenia):
+    """ Pytorch port of mass conserving FlowLenia"""
     def __init__(self, size,
         dt,
         num_channels=3,
@@ -129,9 +129,9 @@ class FlowLenia(MCLenia):
         Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
 
         grad_u = sobel(Aff)  #(B,C,2,H,W)
-        print(f"grad_u.shape is {grad_u.shape}")
+
         grad_x = sobel(self.state.sum(dim=1, keepdims=True))
-        print(f"grad_x.shape is {grad_x.shape}")
+
         alpha = (((self.state.permute(0,2,3,1)[:,:,:,None,:] / self.theta_x) ** self.n)).clip(0, 1)
         F = grad_u * (1 - alpha) - grad_x * alpha
 
@@ -160,7 +160,7 @@ class FlowLenia(MCLenia):
     @torch.no_grad()
     def step(self):
         Aff = self.compute_affinity()
-        print(f"aff .shape is {Aff.shape}")
+
         self.state = self.rt.apply(self.state, Aff)
         if self.has_food:
             self.update_food()

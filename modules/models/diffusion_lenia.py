@@ -89,7 +89,7 @@ class DiffusionLenia(MCLenia):
                 self.state.sum(dim=1)[:, None, :, :] > 0.1
         )  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
         death = (
-                        (self.state.sum(dim=1)[:, None, :, :] < 0.01) & (self.state.sum(dim=1)[:, None, :, :] > 0)
+                        (self.state.sum(dim=1)[:, None, :, :] < 0.04) & (self.state.sum(dim=1)[:, None, :, :] > 0)
                 ) * self.state  # death of the feeding channel, very finicky
 
         overlap = where_food & where_contact  # where the channels overlap
