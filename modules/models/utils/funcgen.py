@@ -71,6 +71,7 @@ class ArbitraryFunction(nn.Module):
         self.register_buffer("coefficients", coefficients)  # (B,num_harmonics)
         self.register_buffer("harmonics", harmonics)  # (B,num_harmonics)
 
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Given x, evaluates the arbitrary function at the locations determined by x

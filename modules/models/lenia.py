@@ -435,14 +435,14 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_DELETE | pygame.K_BACKSPACE:
                 self.state = torch.zeros_like(self.state)
 
-    def compute_ker(self):
+    def compute_ker(self, batch = 0):
         """
         Prepares the kernel and translate it to an RGB image for viewing.
 
         returns :
         kern : (C,3,k_size,k_size) tensor, kernel as
         """
-        kern = self.k[0].detach()  # (C,C, k_size, k_size), removed batch
+        kern = self.k[batch].detach()  # (C,C, k_size, k_size), removed batch
 
         if kern.shape[1] == 1:
             kern = kern.expand(1, 3, -1, -1)
