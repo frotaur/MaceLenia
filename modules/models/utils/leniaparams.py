@@ -357,6 +357,45 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
     
     @staticmethod
+    def to_arbi_params(lenia_params: 'LeniaParams',  discretization_points=1000, device='cpu') -> 'LeniaParams':
+        """
+            Converts LeniaParams to ArbitraryFunction parameters
+        """
+        def k_func(mu_k, sigma_k,beta):
+            x_range = torch.linspace(-1,1,steps=discretization_points,device=device)
+            K = torch.exp(-(((x_range - mu_k) / sigma_k) ** 2) / 2.) # (B,C,C,#of rings, discretization_points)
+            beta = beta[...,None] # (B,C,C,#of rings, 1)
+            K = torch.sum(beta*K,dim=-2) # (B,C,C,discretization_points)
+
+            return K
+
+        def g_func(mu, sigma):
+            x_range = torch.linspace(0,2,steps=discretization_points,device=device) # WARNING : for now I assume that growth is periodic [0,2]. Probably clip outside in the future
+            G = 2*torch.exp(-(((x_range - mu) / sigma) ** 2) / 2.)-1 # (B,C,C,discretization_points)
+            return G
+        
+        B,C,C  = lenia_params.mu.shape
+
+        k_evals  = k_func(lenia_params.mu_k, lenia_params.sigma_k, lenia_params.beta) # (B,C,C,discretization_points)
+        g_evals = g_func(lenia_params.mu, lenia_params.sigma) # (B,C,C,discretization_points)
+        k_evals = k_evals.reshape(B*C*C,discretization_points)
+        g_evals = g_evals.reshape(B*C*C,discretization_points)
+
+        k_arbi = ArbitraryFunction.from_function(k_evals, (-1,1), 15, device=device)
+        g_arbi = ArbitraryFunction.from_function(g_evals, (0,2), 15, device=device)
+
+        params = {
+                'k_size' : lenia_params.k_size,
+                'k_coeffs' : k_arbi.coefficients.reshape(B,C,C,15),
+                'k_harmonics' : k_arbi.harmonics.reshape(B,C,C,15),
+                'g_coeffs' : g_arbi.coefficients.reshape(B,C,C,15),
+                'g_harmonics' : g_arbi.harmonics.reshape(B,C,C,15),
+                'weights' : lenia_params.weights
+        }
+
+        return LeniaParams(params,device=device)
+
+    @staticmethod
     def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=5, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
         """
             Generates growth and kernel parameters with arbitrary functions, randomly.
@@ -370,8 +409,8 @@ class LeniaParams(BatchParams):
                 g_bounds : tuple, bounds for the growth function
                 device : device on which to generate the parameters
         """
-        k_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics) # Generate random
-        g_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
+        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics, bounds_range=(-.2,1),clips_min=0.,device=device) # Generate random
+        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
         
         params ={
                 'k_size' : k_size,
