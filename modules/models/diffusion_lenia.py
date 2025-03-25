@@ -46,6 +46,7 @@ class DiffusionLenia(MCLenia):
 
         self._temp = 1
         self.Aff = self.compute_affinity()
+        self.show_batch = 0
         
 
     def step(self):
@@ -88,7 +89,7 @@ class DiffusionLenia(MCLenia):
                 self.state.sum(dim=1)[:, None, :, :] > 0.1
         )  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
         death = (
-                        (self.state.sum(dim=1)[:, None, :, :] < 0.01) & (self.state.sum(dim=1)[:, None, :, :] > 0)
+                        (self.state.sum(dim=1)[:, None, :, :] < 0.04) & (self.state.sum(dim=1)[:, None, :, :] > 0)
                 ) * self.state  # death of the feeding channel, very finicky
 
         overlap = where_food & where_contact  # where the channels overlap
@@ -99,6 +100,10 @@ class DiffusionLenia(MCLenia):
         self.state -= death
         self.food_channel -= transfer  # Food mass deacrease
         self.food_channel += death.sum(dim=1)[:, None, :, :] / 3
+
+    def update_show_batch(self, dirr):
+        self.show_batch = (self.show_batch + dirr) % self.batch
+
 
     def compute_affinity(self):
         """
@@ -124,6 +129,8 @@ class DiffusionLenia(MCLenia):
         """
         UP -> Increase temperature
         DOWN -> Decrease temperature
+        PLUS -> Show next batch
+        MINUS -> Show previous batch
         """
         super().process_event(event, camera)
         if event.type == pygame.KEYDOWN:
@@ -131,13 +138,17 @@ class DiffusionLenia(MCLenia):
                 self.temp += 0.2
             if event.key == pygame.K_DOWN:
                 self.temp -= 0.2
+            if event.key == pygame.K_KP_PLUS or event.key == pygame.K_PLUS:
+                self.update_show_batch(1)
+            if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
+                self.update_show_batch(-1)
 
     process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 
     def get_string_state(self):
-        return f"total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}"
+        return f"total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
     
     def random_food_chan(self, num_spots=100, food_size=5):
         """
@@ -177,9 +188,9 @@ class DiffusionLenia(MCLenia):
         """
             Draws the RGB worldmap from state.
         """
-        assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
+        #assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
 
-        toshow= self.state[0].clone() # (C,H,W), pygame conversion done later
+        toshow= self.state[self.show_batch].clone() # (C,H,W), pygame conversion done later
 
         if(self.C==1):
             toshow = toshow.repeat(3,1,1) # (3,H,W)
@@ -189,10 +200,10 @@ class DiffusionLenia(MCLenia):
             toshow = toshow[:3,:,:] # (3,H,W)
 
         if self.has_food:
-            toshow[:,:,:] += self.food_channel[0]# (1,H,W)
+            toshow[:,:,:] += self.food_channel[self.show_batch]# (1,H,W)
 
         if self.display_kernel == True:
-            kern = self.compute_ker()  # (C,3,k_size,k_size)
+            kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
             for i in range(kern.shape[0]):
                 toshow[:, self.h - self.k_size : self.h, i * self.k_size : (i + 1) * self.k_size] = kern[
                     i

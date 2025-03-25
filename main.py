@@ -6,6 +6,11 @@ from modules.main_utils import launch_video, add_frame, print_screen
 from modules.main_utils import TextBlock, DropdownMenu, InputField, render_text_blocks
 from pathlib import Path
 
+import pygame_chart as pyc
+
+from modules.models.evolvable_diffusion_lenia import EvolvableDiffusionLenia
+from modules.models.flow_lenia import FlowLenia
+
 cur_dir = Path(__file__).parent
 font_path = (cur_dir / "modules" / "main_utils" / "interface" / "AldotheApache.ttf").as_posix()
 std_help = (cur_dir / "modules" / "main_utils" / "interface" / "std_help.json").as_posix()
@@ -20,7 +25,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
-            (1, h, w),
+            (16, h, w),
             dt=0.1,
             num_channels=3,
             device=device,
@@ -47,7 +52,16 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         ),
         "AsymptoticDiffLenia": lambda h, w: AsymptoticDiffusionLenia(
             size=(1,h, w), device=device, interest_files=(cur_dir / "demo_params").as_posix(), save_dir='saved_diff_lenia'
-        )
+        ),
+        "EvolvableDiffusionLenia": lambda h, w: EvolvableDiffusionLenia(
+            (4, h, w),
+            dt=0.1,
+            num_channels=3,
+            save_dir="saved_diff_lenia",
+            interest_files=(cur_dir / "demo_params").as_posix(),
+            device=device,
+            has_food=True,
+        ),
     }
     sW, sH = screen
 
@@ -64,6 +78,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     font_title = pygame.font.Font(font_path, size=title_size)
 
     screen = pygame.display.set_mode((sW, sH), flags=pygame.RESIZABLE)
+    figure = pyc.Figure(screen, 0.8 * sW, sH // 2, sW * 0.2, sH * 0.2)
+
+
+
 
     clock = pygame.time.Clock()
     running = True
@@ -84,6 +102,13 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     auto = automaton_options[initial_automaton](H, W)
 
     description, help_text = auto.get_help()
+
+
+    def display_fig(figure, data):
+
+        x = [i for i in range(len(data))]
+        figure.line('Chart1', x, data)
+        figure.draw()
 
     def make_text_blocks(description, help_text, std_help, font, font_title):
         text_blocks = [
@@ -222,6 +247,12 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                 input_height = int(new_h * 0.05)
                 margin = int(new_h * 0.02)
 
+                #figure.width = int(0.2 * new_w)
+                #figure.height = int(0.2 * new_h)
+                figure.x = int(0.8*new_w)
+                figure.y = int(0.5*new_h)
+
+
                 # Update text sizes
                 text_size = int(new_h / 45)
                 title_size = int(text_size * 1.5)
@@ -284,6 +315,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         # Clear the screen
         screen.fill((0, 0, 0))
 
+
+
         # Draw the scaled surface on the window
         zoomed_surface = camera.apply(world_surface, border=True)
         screen.blit(zoomed_surface, (0, 0))
@@ -314,6 +347,11 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
         display_live_text(auto, font, screen)
         # Update the screen
+        if hasattr(auto, "masses"):
+
+            data = auto.masses
+            figure.set_ylim((min(data)-5, max(data)+6))
+            display_fig(figure,data)
         pygame.display.flip()
 
         clock.tick(fps)  # limits FPS to 60
@@ -322,4 +360,5 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
 if __name__ == "__main__":
-    gameloop((1280, 720), (300, 300), "cuda")
+
+    gameloop((1280, 720), (500, 500), "cuda:0")
