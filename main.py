@@ -25,7 +25,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
-            (16, h, w),
+            (1, h, w),
             dt=0.1,
             num_channels=3,
             device=device,
@@ -348,7 +348,6 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         display_live_text(auto, font, screen)
         # Update the screen
         if hasattr(auto, "masses"):
-
             data = auto.masses
             figure.set_ylim((min(data)-5, max(data)+6))
             display_fig(figure,data)

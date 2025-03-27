@@ -362,16 +362,21 @@ class LeniaParams(BatchParams):
             Converts LeniaParams to ArbitraryFunction parameters
         """
         def k_func(mu_k, sigma_k,beta):
-            x_range = torch.linspace(-1,1,steps=discretization_points,device=device)
-            K = torch.exp(-(((x_range - mu_k) / sigma_k) ** 2) / 2.) # (B,C,C,#of rings, discretization_points)
+            B,C,C,ringu = mu_k.shape
+            x_range = torch.arange(-1,1,step=2/discretization_points,device=device)  # (discretization_points,)
+            x_range = x_range[None,None,None,None,:] # (1,1,1,1,discretization_points)
+
+            K = torch.exp(-(((x_range - mu_k[...,None]) / sigma_k[...,None]) ** 2) / 2.) # (B,C,C,#of rings, discretization_points)
             beta = beta[...,None] # (B,C,C,#of rings, 1)
             K = torch.sum(beta*K,dim=-2) # (B,C,C,discretization_points)
 
             return K
 
         def g_func(mu, sigma):
-            x_range = torch.linspace(0,2,steps=discretization_points,device=device) # WARNING : for now I assume that growth is periodic [0,2]. Probably clip outside in the future
-            G = 2*torch.exp(-(((x_range - mu) / sigma) ** 2) / 2.)-1 # (B,C,C,discretization_points)
+            x_range = torch.arange(0,2,step=2/discretization_points,device=device)  # (discretization_points,)
+            x_range = x_range[None,None,None,:] # (1,1,1,discretization_points)
+
+            G = 2*torch.exp(-(((x_range - mu[...,None]) / sigma[..., None]) ** 2) / 2.)-1 # (B,C,C,discretization_points)
             return G
         
         B,C,C  = lenia_params.mu.shape
@@ -381,22 +386,24 @@ class LeniaParams(BatchParams):
         k_evals = k_evals.reshape(B*C*C,discretization_points)
         g_evals = g_evals.reshape(B*C*C,discretization_points)
 
-        k_arbi = ArbitraryFunction.from_function(k_evals, (-1,1), 15, device=device)
-        g_arbi = ArbitraryFunction.from_function(g_evals, (0,2), 15, device=device)
+        n_coeffs = 15
+        k_arbi = ArbitraryFunction.from_function_evals(k_evals, (-1.,1.), n_coeffs=n_coeffs, device=device)
+        g_arbi = ArbitraryFunction.from_function_evals(g_evals, (0.,2.), n_coeffs=n_coeffs, device=device)
 
+        n_harmo = 15*2+1
         params = {
                 'k_size' : lenia_params.k_size,
-                'k_coeffs' : k_arbi.coefficients.reshape(B,C,C,15),
-                'k_harmonics' : k_arbi.harmonics.reshape(B,C,C,15),
-                'g_coeffs' : g_arbi.coefficients.reshape(B,C,C,15),
-                'g_harmonics' : g_arbi.harmonics.reshape(B,C,C,15),
+                'k_coeffs' : k_arbi.coefficients.reshape(B,C,C,n_harmo),
+                'k_harmonics' : k_arbi.harmonics.reshape(B,C,C,n_harmo),
+                'g_coeffs' : g_arbi.coefficients.reshape(B,C,C,n_harmo),
+                'g_harmonics' : g_arbi.harmonics.reshape(B,C,C,n_harmo),
                 'weights' : lenia_params.weights
         }
 
         return LeniaParams(params,device=device)
 
     @staticmethod
-    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=5, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
+    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=5, g_harmonics=2, g_bounds=(-1,1), device='cpu'):
         """
             Generates growth and kernel parameters with arbitrary functions, randomly.
             TODO : Make it better, potentially make many versions of this function
@@ -409,15 +416,15 @@ class LeniaParams(BatchParams):
                 g_bounds : tuple, bounds for the growth function
                 device : device on which to generate the parameters
         """
-        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics, bounds_range=(-.2,1),clips_min=0.,device=device) # Generate random
-        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
+        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=k_harmonics, ranges=(0.,1.),rescale=(0.,1),clips_min=0.,device=device) # Generate random
+        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=g_harmonics,ranges=(0.,2.),rescale=g_bounds,) # Generate random
         
         params ={
                 'k_size' : k_size,
-                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,k_harmonics),
-                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,k_harmonics),
-                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,g_harmonics),
-                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,g_harmonics),
+                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*k_harmonics+1),
+                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*k_harmonics+1),
+                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*g_harmonics+1),
+                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*g_harmonics+1),
                 'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
                 }
     

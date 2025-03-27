@@ -53,11 +53,13 @@ class MCLenia(DevModule, Automaton):
         """
         DevModule.__init__(self)
         Automaton.__init__(self, size[1:])
+
         self.to(device)
 
         self.batch = size[0]
         self.h, self.w = size[1:]
         self.C = num_channels
+        self.use_arbi = False
 
         if params is None:
             # Generates random parameters
@@ -103,6 +105,7 @@ class MCLenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
+
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
         Updates parameters of the automaton.
@@ -136,8 +139,11 @@ class MCLenia(DevModule, Automaton):
         self.params = LeniaParams(param_dict=params, device=self.device)
 
         self.batch = self.mu.shape[0]  # update batch size
-        self.k = self.compute_kernel()  # (B,C,C,k_size,k_size)
-        self.growth = self.compute_growth()  # growth function, callable
+        if(self.use_arbi and not ('k_harmonics' in params)):
+            self.params = LeniaParams.to_arbi_params(lenia_params=self.params,device=self.device)
+            
+        self.k = self.compute_kernel(force_standard=self.use_arbi)  # (B,C,C,k_size,k_size)
+        self.growth = self.compute_growth(force_standard=self.use_arbi)  # growth function, callable
 
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
 
@@ -244,8 +250,9 @@ class MCLenia(DevModule, Automaton):
             coeffs = self.params["k_coeffs"].reshape(
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
+            ranges = torch.tensor([0.,1.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, bounds_range=(0.0, 1.0), device=self.device
+                coefficients=coeffs, harmonics=harmonics, ranges=ranges, device=self.device
             )
             K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (B,C,C,k_size,k_size)
             K = K.reshape(self.batch, self.C, self.C, self.k_size, self.k_size)
@@ -288,8 +295,10 @@ class MCLenia(DevModule, Automaton):
             harmonics = self.params["g_harmonics"].reshape(
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
+            ranges = torch.tensor([0.,2.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
+            rescale = (-1.,1.)
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, bounds_range=(-2.0, 2.0), device=self.device
+                coefficients=coeffs, harmonics=harmonics, ranges=ranges,rescale=rescale, device=self.device
             )
 
             def growth(u):
@@ -297,8 +306,54 @@ class MCLenia(DevModule, Automaton):
                 u = u.reshape(B * C * C, H, W)
                 out = arbi(u)
                 return out.reshape(B, C, C, H, W)
-
             return growth
+            # def plot_growth(self, n_points=100):
+            #     """
+            #     Plots the growth function on a C*C grid with input values from 0 to 2.
+                
+            #     Args:
+            #         n_points: Number of points to sample in the growth function
+            #     """
+            #     import matplotlib.pyplot as plt
+                
+            #     # Create input tensor from 0 to 2
+            #     x = torch.linspace(0, 2, n_points, device=self.device)
+                
+            #     # Reshape to match the expected format for the growth function
+            #     # For first batch only, expand to match dimensions
+            #     x_expanded = x.view(1, 1, 1, n_points, 1).expand(1, self.C, self.C, n_points, 1)
+                
+            #     # Apply the growth function
+            #     result = growth(x_expanded)[0, :, :, :, 0]  # Take first batch, drop W dimension
+                
+            #     # Create a figure with C*C subplots
+            #     fig, axes = plt.subplots(self.C, self.C, figsize=(3*self.C, 3*self.C))
+                
+            #     # Convert x to numpy for plotting
+            #     x_np = x.cpu().numpy()
+                
+            #     # Plot each growth function
+            #     for i in range(self.C):
+            #         for j in range(self.C):
+            #             # Get the current axis (handle the case when C=1)
+            #             if self.C == 1:
+            #                 ax = axes
+            #             else:
+            #                 ax = axes[i, j]
+                            
+            #             y = result[i, j].cpu().numpy()
+            #             ax.plot(x_np, y)
+            #             ax.set_title(f"Channel {i} → {j}")
+            #             # ax.set_ylim(-5, 1.1)
+            #             ax.grid(True)
+                        
+            #     plt.tight_layout()
+            #     plt.show()
+                
+            #     return result  # Shape: (C, C, n_points)
+
+            # # plot_growth(self, n_points=100)  # Call the plotting function
+
         else:
             mu = self.mu[..., None, None]  # (B,C,C,1,1)
             sigma = self.sigma[..., None, None]  # (B,C,C,1,1)
@@ -395,16 +450,16 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_n:
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
                     params = LeniaParams.default_gen(
-                    batch_size=1, num_channels=self.C, device=self.device, k_size=31
+                    batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
                 )
                 else:
                     params = LeniaParams.random_gen(
-                        batch_size=1, num_channels=self.C, device=self.device, k_size=31
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
                     )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
                 params = LeniaParams.arbi_gen(
-                    batch_size=1, num_channels=self.C, device=self.device, k_size=31
+                    batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
                 )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_u:
@@ -439,7 +494,10 @@ class MCLenia(DevModule, Automaton):
                 else:
                     # Save the current parameters to remarkable dir :
                     self.params.save_indiv(self.save_dir, annotation=["_nice"])
-            
+            if event.key  == pygame.K_x:
+                self.use_arbi = not self.use_arbi
+                print('Usae arbi :',  self.use_arbi)
+                self.update_params(self.params, k_size_override=None)
             if event.key == pygame.K_k:
                 # Toggle display kernel
                 self.display_kernel = not self.display_kernel
