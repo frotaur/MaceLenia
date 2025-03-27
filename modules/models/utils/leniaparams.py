@@ -403,7 +403,7 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
 
     @staticmethod
-    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=5, g_harmonics=2, g_bounds=(-1,1), device='cpu'):
+    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_coeffs=3, k_rescale=(-.3,1.), g_coeffs=2, g_rescale=(-2.,2.), g_clip=0., device='cpu'):
         """
             Generates growth and kernel parameters with arbitrary functions, randomly.
             TODO : Make it better, potentially make many versions of this function
@@ -416,16 +416,19 @@ class LeniaParams(BatchParams):
                 g_bounds : tuple, bounds for the growth function
                 device : device on which to generate the parameters
         """
-        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=k_harmonics, ranges=(0.,1.),rescale=(0.,1),clips_min=0.,device=device) # Generate random
-        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=g_harmonics,ranges=(0.,2.),rescale=g_bounds,) # Generate random
+        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=k_coeffs, ranges=(0.,1.),rescale=k_rescale,clips_min=0.,device=device) # Generate random
+        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=g_coeffs,ranges=(0.,2.),clips_min=g_clip,rescale=g_rescale, device=device) # Generate random
         
         params ={
                 'k_size' : k_size,
-                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*k_harmonics+1),
-                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*k_harmonics+1),
-                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*g_harmonics+1),
-                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*g_harmonics+1),
-                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
+                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*k_coeffs+1),
+                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*k_coeffs+1),
+                'k_rescale' : k_rescale,
+                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*g_coeffs+1),
+                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*g_coeffs+1),
+                'g_rescale' : g_rescale,
+                'g_clip' : g_clip,
+                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.7*torch.diag(torch.ones(num_channels,device=device)))
                 }
     
         return LeniaParams(params,device=device)

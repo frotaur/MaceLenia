@@ -252,7 +252,7 @@ class MCLenia(DevModule, Automaton):
             )  # (B*C*C,# of harmonics)
             ranges = torch.tensor([0.,1.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, ranges=ranges, device=self.device
+                coefficients=coeffs, harmonics=harmonics, ranges=ranges, rescale=self.params.k_rescale,clips_min=0., device=self.device
             )
             K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (B,C,C,k_size,k_size)
             K = K.reshape(self.batch, self.C, self.C, self.k_size, self.k_size)
@@ -296,9 +296,9 @@ class MCLenia(DevModule, Automaton):
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
             ranges = torch.tensor([0.,2.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
-            rescale = (-1.,1.)
+
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, ranges=ranges,rescale=rescale, device=self.device
+                coefficients=coeffs, harmonics=harmonics, ranges=ranges,rescale=self.params.g_rescale, clips_min=self.params.g_clip, device=self.device
             )
 
             def growth(u):
@@ -307,6 +307,7 @@ class MCLenia(DevModule, Automaton):
                 out = arbi(u)
                 return out.reshape(B, C, C, H, W)
             return growth
+
             # def plot_growth(self, n_points=100):
             #     """
             #     Plots the growth function on a C*C grid with input values from 0 to 2.
@@ -352,7 +353,7 @@ class MCLenia(DevModule, Automaton):
                 
             #     return result  # Shape: (C, C, n_points)
 
-            # # plot_growth(self, n_points=100)  # Call the plotting function
+            # plot_growth(self, n_points=100)  # Call the plotting function
 
         else:
             mu = self.mu[..., None, None]  # (B,C,C,1,1)

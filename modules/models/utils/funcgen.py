@@ -40,7 +40,8 @@ class ArbitraryFunction(nn.Module):
 
         self.rescale_range = rescale
         self.clips_min = clips_min
-        ranges = ranges.to(self.device)
+
+        self.ranges = ranges.to(self.device)
         self.shifts = ranges[:, 0] # (B,)
         self.period = ranges[:, 1] - ranges[:, 0] # (B,)
 
