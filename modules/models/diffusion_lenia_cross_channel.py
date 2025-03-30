@@ -2,6 +2,8 @@ import torch, torch.nn, torch.nn.functional as F
 import pygame
 from nltk.downloader import update
 from numpy.ma.core import minimum
+from sympy.abc import alpha
+
 from ..models.utils.torch_utils import unfold3d
 from .lenia import MCLenia
 import random
@@ -83,13 +85,13 @@ class DiffusionLeniaCrossChannel(MCLenia):
 
         min_aff = Aff.min()
         max_aff = Aff.max()
-        Aff_norm = (Aff - min_aff) / (max_aff - min_aff)
-        Aff_c = Aff_norm / Aff_norm.sum(dim=1, keepdim=True)
+        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-6)
+        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True))
 
         target_cross_c_masses = self.state.sum(dim=1, keepdim=True) * Aff_c
+        diff_target = self.state - target_cross_c_masses
         alpha = 0.5/self._temp
-
-        self.state = self.state *(1-alpha) + target_cross_c_masses * alpha
+        self.state -= diff_target * alpha
 
 
 
