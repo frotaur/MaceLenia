@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pygame_chart as pyc
 
+from modules.models.diffusion_lenia_cross_channel import DiffusionLeniaCrossChannel
 from modules.models.evolvable_diffusion_lenia import EvolvableDiffusionLenia
 from modules.models.flow_lenia import FlowLenia
 
@@ -25,11 +26,20 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
-            (16, h, w),
+            (1, h, w),
             dt=0.1,
             num_channels=3,
             device=device,
             has_food=True,
+            save_dir="saved_diff_lenia",
+            interest_files=(cur_dir / "demo_params").as_posix(),
+        ),
+        "DiffusionLeniaCrossChannel": lambda h, w: DiffusionLeniaCrossChannel(
+            (1, h, w),
+            dt=0.1,
+            num_channels=3,
+            device=device,
+            has_food=False,
             save_dir="saved_diff_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
         ),
@@ -53,7 +63,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             ),
 
         "EvolvableDiffusionLenia": lambda h, w: EvolvableDiffusionLenia(
-            (4, h, w),
+            (16, h, w),
             dt=0.1,
             num_channels=3,
             save_dir="saved_diff_lenia",

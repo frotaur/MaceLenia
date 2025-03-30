@@ -310,15 +310,15 @@ class LeniaParams(BatchParams):
         """
         param_keys = self.param_dict.keys()
         if('mu' in param_keys):
-            self.mu = torch.clamp(self.mu,0,2)
+            self.mu = torch.clamp(self.mu,-2,2)
         if('sigma' in param_keys):
-            self.sigma = torch.clamp(self.sigma,1e-3,None)
+            self.sigma = torch.clamp(self.sigma,1e-4,1.0)
         if('beta' in param_keys):
             self.beta = torch.clamp(self.beta,0, None)
         if('mu_k' in param_keys):
-            self.mu_k = torch.clamp(self.mu_k,0,2)
+            self.mu_k = torch.clamp(self.mu_k,-2,2)
         if('sigma_k' in param_keys):
-            self.sigma_k = torch.clamp(self.sigma_k,1e-3,None)
+            self.sigma_k = torch.clamp(self.sigma_k,1e-4,1.0)
 
         self.weights = torch.clamp(self.weights,0,None)
         ## Normalize weights
@@ -353,7 +353,7 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
     
     @staticmethod
-    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=5, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
+    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=3, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
         """
             Generates growth and kernel parameters with arbitrary functions, randomly.
             TODO : Make it better, potentially make many versions of this function

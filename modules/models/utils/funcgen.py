@@ -71,7 +71,7 @@ class ArbitraryFunction(nn.Module):
         self.register_buffer("coefficients", coefficients)  # (B,num_harmonics)
         self.register_buffer("harmonics", harmonics)  # (B,num_harmonics)
 
-
+    @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Given x, evaluates the arbitrary function at the locations determined by x
@@ -85,8 +85,7 @@ class ArbitraryFunction(nn.Module):
 
 
         x = x.reshape(self.func_num, 1, -1)  # (B,1,*)
-        shift = x.min().unsqueeze(-1)
-        period = 1/1000
+
         #values = self.coefficients[..., None] * torch.cos(
             #self.harmonics[..., None] * x * torch.pi
         #)  # (B,num_harmonics,*)

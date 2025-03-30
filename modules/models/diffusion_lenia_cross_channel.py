@@ -6,7 +6,7 @@ from numpy.ma.core import minimum
 from .lenia import MCLenia
 import random
 
-class DiffusionLenia(MCLenia):
+class DiffusionLeniaCrossChannel(MCLenia):
     """
     Mass conserving Lenia-like Alife model
     """
@@ -69,6 +69,10 @@ class DiffusionLenia(MCLenia):
         B, C, H, W = self.state.shape
 
         Aff = self.compute_affinity(sense_food=sense_food)
+        min_aff = Aff.min()
+        max_aff = Aff.max()
+        Aff_norm = (Aff-min_aff)/(max_aff-min_aff)
+        Aff_c = Aff_norm/Aff_norm.sum(dim=1,keepdim=True)
         Aff_exp = F.pad(Aff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
         Aff_exp = F.unfold(Aff_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
         E = Aff_exp.sum(dim=2)
@@ -77,7 +81,11 @@ class DiffusionLenia(MCLenia):
         state_exp = F.pad(self.state, (1, 1, 1, 1), mode="circular")
         state_exp = F.unfold(state_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
 
-        self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
+        self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2).sum(dim=1, keepdim=True).tile(1,C,1,1)*Aff_c
+
+
+
+
 
         if self.has_food:
 
@@ -94,13 +102,11 @@ class DiffusionLenia(MCLenia):
 
             self.update_food(min_density=0.05,transfer_rate=0.06, death_enabled=False)
 
-
-
-
-    def update_food(self, min_density =0.1, transfer_rate = 0.03, death_enabled = False):
+    def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
         """uncomment the death sections for death mechanics, but its finicky and i dont like it """
         where_food = self.food_channel > 0  # Where the food channels are
-        where_contact = (self.state.sum(dim=1)[:, None, :, :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
+        where_contact = (self.state[:, 2:3, :,
+                         :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
 
         if death_enabled:
             death = ((self.state < 0.04) & (self.state > 0)) * self.state  # death of the feeding channel, very finicky
@@ -108,11 +114,9 @@ class DiffusionLenia(MCLenia):
         overlap = where_food & where_contact  # where the channels overlap
         transfer = torch.minimum(self.food_channel, torch.ones_like(where_food) * overlap * transfer_rate)
 
-        self.state += transfer/3  # Lenia mass increase
-
+        self.state[:, 1:2, ...] += transfer  # Lenia mass increase
 
         self.food_channel -= transfer
-
 
         if death_enabled:
             self.state -= death
@@ -170,7 +174,7 @@ class DiffusionLenia(MCLenia):
     )  # Hack to append the docstring of MCLenia.process_event
 
     def get_string_state(self):
-        return f"total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
+        return f"R _total Mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
     
     def random_food_chan(self, num_spots=100, food_size=5, add_to_exisitng = False,  channels= []):
         """
