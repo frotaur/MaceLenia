@@ -2,7 +2,7 @@ import torch, torch.nn, torch.nn.functional as F
 import pygame
 from nltk.downloader import update
 from numpy.ma.core import minimum
-
+from ..models.utils.torch_utils import unfold3d
 from .lenia import MCLenia
 import random
 
@@ -68,20 +68,16 @@ class DiffusionLeniaCrossChannel(MCLenia):
         self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
         B, C, H, W = self.state.shape
 
-        Aff = self.compute_affinity(sense_food=sense_food)
-        min_aff = Aff.min()
-        max_aff = Aff.max()
-        Aff_norm = (Aff-min_aff)/(max_aff-min_aff)
-        Aff_c = Aff_norm/Aff_norm.sum(dim=1,keepdim=True)
-        Aff_exp = F.pad(Aff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
-        Aff_exp = F.unfold(Aff_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        Aff = self.compute_affinity(sense_food=True)
+        Aff_exp = F.pad(Aff, (1, 1, 1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
+        Aff_exp = unfold3d(Aff_exp,kernel_size=(3,3,3),stride=1).reshape(B,C,27,H,W)
         E = Aff_exp.sum(dim=2)
-        E_exp = F.pad(E, (1, 1, 1, 1), mode="circular")
-        E_exp = F.unfold(E_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
-        state_exp = F.pad(self.state, (1, 1, 1, 1), mode="circular")
-        state_exp = F.unfold(state_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        E_exp = F.pad(E, (1, 1, 1, 1, 1, 1), mode="circular")
+        E_exp = unfold3d(E_exp,kernel_size=(3,3,3),stride=1).reshape(B,C,27,H,W)
+        state_exp = F.pad(self.state, (1, 1, 1, 1, 1, 1), mode="circular")
+        state_exp = unfold3d(state_exp,kernel_size=(3,3,3),stride=1).reshape(B,C,27,H,W)
 
-        self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2).sum(dim=1, keepdim=True).tile(1,C,1,1)*Aff_c
+        self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
 
 
 
