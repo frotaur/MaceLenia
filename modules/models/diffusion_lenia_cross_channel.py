@@ -90,7 +90,7 @@ class DiffusionLeniaCrossChannel(MCLenia):
 
         target_cross_c_masses = self.state.sum(dim=1, keepdim=True) * Aff_c
         diff_target = self.state - target_cross_c_masses
-        alpha = 0.5/self._temp
+        alpha = 0.4/self._temp
         self.state -= diff_target * alpha
 
 
