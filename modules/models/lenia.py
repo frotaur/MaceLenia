@@ -6,8 +6,9 @@ from .utils.leniaparams import LeniaParams
 import random, pygame
 from .automaton import Automaton
 from pathlib import Path
-from .utils.funcgen import ArbitraryFunction
+from .utils.funcgen import ArbitraryFunction, OldArbitraryFunction
 from copy import deepcopy
+
 
 class MCLenia(DevModule, Automaton):
     """
@@ -25,7 +26,6 @@ class MCLenia(DevModule, Automaton):
         device="cpu",
         interest_files=None,
         save_dir=".",
-
     ):
         """
         Initializes automaton.
@@ -105,6 +105,9 @@ class MCLenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
+        # For the generation, whether to use the arbitrary function or not
+        self.g_arbi = False
+        self.k_arbi = False
 
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
@@ -132,18 +135,18 @@ class MCLenia(DevModule, Automaton):
             self.k_size += 1
             print(f"Increased even kernel size to {self.k_size} to be odd")
 
-        if('state' in params):
-            self._load_state(params['state']) #
-            del params['state'] # Remove state from params
+        if "state" in params:
+            self._load_state(params["state"])  #
+            del params["state"]  # Remove state from params
 
         self.params = LeniaParams(param_dict=params, device=self.device)
 
         self.batch = self.mu.shape[0]  # update batch size
-        if(self.use_arbi and not ('k_harmonics' in params)):
-            self.params = LeniaParams.to_arbi_params(lenia_params=self.params,device=self.device)
-            
-        self.k = self.compute_kernel(force_standard=self.use_arbi)  # (B,C,C,k_size,k_size)
-        self.growth = self.compute_growth(force_standard=self.use_arbi)  # growth function, callable
+        if self.use_arbi and not ("k_harmonics" in params):
+            self.params = LeniaParams.to_arbi_params(lenia_params=self.params, device=self.device)
+
+        self.k = self.compute_kernel(force_standard=not self.use_arbi)  # (B,C,C,k_size,k_size)
+        self.growth = self.compute_growth(force_standard=not self.use_arbi)  # growth function, callable
 
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
 
@@ -250,9 +253,16 @@ class MCLenia(DevModule, Automaton):
             coeffs = self.params["k_coeffs"].reshape(
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
-            ranges = torch.tensor([0.,1.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
+            ranges = torch.tensor([0.0, 1.0], device=self.device)[None, :].expand(
+                self.batch * self.C * self.C, -1
+            )
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, ranges=ranges, rescale=self.params.k_rescale,clips_min=0., device=self.device
+                coefficients=coeffs,
+                harmonics=harmonics,
+                ranges=ranges,
+                rescale=self.params["k_rescale"],
+                clips_min=0.0,
+                device=self.device,
             )
             K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (B,C,C,k_size,k_size)
             K = K.reshape(self.batch, self.C, self.C, self.k_size, self.k_size)
@@ -295,10 +305,17 @@ class MCLenia(DevModule, Automaton):
             harmonics = self.params["g_harmonics"].reshape(
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
-            ranges = torch.tensor([0.,2.], device=self.device)[None,:].expand(self.batch * self.C * self.C, -1)
+            ranges = torch.tensor([0.0, 2.0], device=self.device)[None, :].expand(
+                self.batch * self.C * self.C, -1
+            )
 
             arbi = ArbitraryFunction(
-                coefficients=coeffs, harmonics=harmonics, ranges=ranges,rescale=self.params.g_rescale, clips_min=self.params.g_clip, device=self.device
+                coefficients=coeffs,
+                harmonics=harmonics,
+                ranges=ranges,
+                rescale=self.params["g_rescale"],
+                clips_min=self.params["g_clip"],
+                device=self.device,
             )
 
             def growth(u):
@@ -306,65 +323,19 @@ class MCLenia(DevModule, Automaton):
                 u = u.reshape(B * C * C, H, W)
                 out = arbi(u)
                 return out.reshape(B, C, C, H, W)
+
             return growth
-
-            # def plot_growth(self, n_points=100):
-            #     """
-            #     Plots the growth function on a C*C grid with input values from 0 to 2.
-                
-            #     Args:
-            #         n_points: Number of points to sample in the growth function
-            #     """
-            #     import matplotlib.pyplot as plt
-                
-            #     # Create input tensor from 0 to 2
-            #     x = torch.linspace(0, 2, n_points, device=self.device)
-                
-            #     # Reshape to match the expected format for the growth function
-            #     # For first batch only, expand to match dimensions
-            #     x_expanded = x.view(1, 1, 1, n_points, 1).expand(1, self.C, self.C, n_points, 1)
-                
-            #     # Apply the growth function
-            #     result = growth(x_expanded)[0, :, :, :, 0]  # Take first batch, drop W dimension
-                
-            #     # Create a figure with C*C subplots
-            #     fig, axes = plt.subplots(self.C, self.C, figsize=(3*self.C, 3*self.C))
-                
-            #     # Convert x to numpy for plotting
-            #     x_np = x.cpu().numpy()
-                
-            #     # Plot each growth function
-            #     for i in range(self.C):
-            #         for j in range(self.C):
-            #             # Get the current axis (handle the case when C=1)
-            #             if self.C == 1:
-            #                 ax = axes
-            #             else:
-            #                 ax = axes[i, j]
-                            
-            #             y = result[i, j].cpu().numpy()
-            #             ax.plot(x_np, y)
-            #             ax.set_title(f"Channel {i} → {j}")
-            #             # ax.set_ylim(-5, 1.1)
-            #             ax.grid(True)
-                        
-            #     plt.tight_layout()
-            #     plt.show()
-                
-            #     return result  # Shape: (C, C, n_points)
-
-            # plot_growth(self, n_points=100)  # Call the plotting function
 
         else:
             mu = self.mu[..., None, None]  # (B,C,C,1,1)
             sigma = self.sigma[..., None, None]  # (B,C,C,1,1)
-            mu = mu.expand(-1, -1, -1, self.h, self.w)  # (B,C,C,H,W)
-            sigma = sigma.expand(-1, -1, -1, self.h, self.w)  # (B,C,C,H,W)
-            growth = lambda u: 2 * torch.exp(-((u - mu) ** 2 / (sigma) ** 2) / 2) - 1
+
+            def growth(u):
+                mu_exp = mu.expand(-1, -1, -1, u.shape[-2], u.shape[-1])  # (B,C,C,H,W)
+                sigma_exp = sigma.expand(-1, -1, -1, u.shape[-2], u.shape[-1])
+                return 2 * torch.exp(-((u - mu_exp) ** 2 / (sigma_exp) ** 2) / 2) - 1
+
             return growth
-
-
-
 
     @torch.no_grad()
     def step(self):
@@ -435,7 +406,7 @@ class MCLenia(DevModule, Automaton):
 
     def process_event(self, event, camera=None):
         """
-        N (+ shift) -> New random parameters
+        N (+ shift) -> New random (truerandom) parameters
         A -> Random parameters using ArbitraryFunction
         M -> Load new interesting param
         U -> Variate around parameters
@@ -445,22 +416,29 @@ class MCLenia(DevModule, Automaton):
         L -> Initialize with random wavelength perlin
         S -> Save the current parameters
         K -> Toggle display kernel
+        Y (+shift) -> Toggle arbi random param generation
         DEL -> sets state to 0
         """
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n:
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                    params = LeniaParams.default_gen(
-                    batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
-                )
-                else:
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     params = LeniaParams.random_gen(
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
+                    )
+                else:
+                    params = LeniaParams.default_gen(
                         batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
                     )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
-                params = LeniaParams.arbi_gen(
-                    batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
+                params = LeniaParams.mixed_gen(
+                    batch_size=self.batch,
+                    num_channels=self.C,
+                    device=self.device,
+                    k_size=31,
+                    k_arbi=self.k_arbi,
+                    g_arbi=self.g_arbi,
+                    k_coeffs=6
                 )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_u:
@@ -479,6 +457,11 @@ class MCLenia(DevModule, Automaton):
                 # Initialize with random wavelength perlin
                 sq_size = random.randint(5, min(self.h, self.w))
                 self.set_init_perlin(wavelength=sq_size)
+            if event.key == pygame.K_y:
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.g_arbi = not self.g_arbi
+                else:
+                    self.k_arbi = not self.k_arbi
             if event.key == pygame.K_m:
                 if self.interest_files:
                     # Load random interesting param, if we have some
@@ -489,15 +472,15 @@ class MCLenia(DevModule, Automaton):
                     self.update_params(params, k_size_override=None)
                     print("Loaded : ", file)
             if event.key == pygame.K_s:
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     # Save current state + parameters
                     self._save_with_state(self.save_dir)
                 else:
                     # Save the current parameters to remarkable dir :
                     self.params.save_indiv(self.save_dir, annotation=["_nice"])
-            if event.key  == pygame.K_x:
+            if event.key == pygame.K_x:
                 self.use_arbi = not self.use_arbi
-                print('Usae arbi :',  self.use_arbi)
+                print("Use arbi :", self.use_arbi)
                 self.update_params(self.params, k_size_override=None)
             if event.key == pygame.K_k:
                 # Toggle display kernel
@@ -505,7 +488,7 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_DELETE | pygame.K_BACKSPACE:
                 self.state = torch.zeros_like(self.state)
 
-    def compute_ker(self, batch = 0):
+    def compute_ker(self, batch=0):
         """
         Prepares the kernel and translate it to an RGB image for viewing.
 
@@ -528,9 +511,9 @@ class MCLenia(DevModule, Automaton):
 
     def _save_with_state(self, path):
         """
-            Saves the parameters of the automaton ALONG with the current state.
+        Saves the parameters of the automaton ALONG with the current state.
         """
-        path = Path(path)  / "state_saves"
+        path = Path(path) / "state_saves"
         path.mkdir(parents=True, exist_ok=True)
 
         to_save = deepcopy(self.params)
@@ -538,44 +521,45 @@ class MCLenia(DevModule, Automaton):
         to_save.save_indiv(path, batch_name=True, annotation=["_state"])
 
     def _load_state(self, state):
-        """"
-            Loads a state into the automaton, without breaking
-            if the provided state has a different shape than the automaton
+        """ "
+        Loads a state into the automaton, without breaking
+        if the provided state has a different shape than the automaton
         """
-        B,C,H,W = state.shape
+        B, C, H, W = state.shape
         if not (B == self.batch or B == 1):
             print("Skipping, batch size of state should match automaton or be 1")
             return
         if not (C == self.C):
             print("Skipping, number of channels of state should match automaton")
             return
-        if(H>self.h or W>self.w):
+        if H > self.h or W > self.w:
             print("Warning, state will be clipped to automaton size")
             if H > self.h:
                 clip_h = (H - self.h) // 2
                 extra_clip = 0 if (H - self.h) % 2 == 0 else 1
-                state = state[:, :, clip_h:H-clip_h-extra_clip, :] # Symmetrical clip
+                state = state[:, :, clip_h : H - clip_h - extra_clip, :]  # Symmetrical clip
                 H = self.h
             if W > self.w:
                 clip_w = (W - self.w) // 2
                 extra_clip = 0 if (W - self.w) % 2 == 0 else 1
-                state = state[:, :, :, clip_w:W-clip_w-extra_clip] # Symmetrical clip
+                state = state[:, :, :, clip_w : W - clip_w - extra_clip]  # Symmetrical clip
                 W = self.w
-    
-        self.state = state[:,:,:self.h,:self.w]
-        
-        if(H<self.h):
-            pad_h = (self.h-H)//2
+
+        self.state = state[:, :, : self.h, : self.w]
+
+        if H < self.h:
+            pad_h = (self.h - H) // 2
         else:
             pad_h = 0
-        if(W<self.w):
-            pad_w = (self.w-W)//2
+        if W < self.w:
+            pad_w = (self.w - W) // 2
         else:
             pad_w = 0
-        
-        self.state = F.pad(self.state, (pad_w,pad_w,pad_h,pad_h), mode='constant', value=0.0)
 
-        
+        self.state = F.pad(self.state, (pad_w, pad_w, pad_h, pad_h), mode="constant", value=0.0)
+
+    def get_string_state(self):
+        return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi}"
 
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:
     H, W = tensor.shape[-2], tensor.shape[-1]

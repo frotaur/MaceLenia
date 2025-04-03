@@ -1,7 +1,7 @@
 import torch
 import math, os
 from .hash_params import params_to_words
-from .funcgen import ArbitraryFunction
+from .funcgen import ArbitraryFunction, OldArbitraryFunction
 
 
 class BatchParams():
@@ -150,9 +150,11 @@ class BatchParams():
             as advanced indexing on the batch dimension, like in pytorch.
             Will ALWAYS keep at least one dimension for the batch size.
             In other words,params[1] is the same as params[1:2]
+
+            WARNING : will not fail if the key is not found, will return None.
         """
         if(isinstance(idx, str)):
-            return self.param_dict[idx]
+            return self.param_dict.get(idx,None) # Soft fail if key not found, return None.
         elif(isinstance(idx, int)):
             idx = slice(idx,idx+1)
         
@@ -357,13 +359,13 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
     
     @staticmethod
-    def to_arbi_params(lenia_params: 'LeniaParams',  discretization_points=1000, device='cpu') -> 'LeniaParams':
+    def to_old_arbi_params(lenia_params: 'LeniaParams',  discretization_points=1000, device='cpu') -> 'LeniaParams':
         """
-            Converts LeniaParams to ArbitraryFunction parameters
+            Converts LeniaParams to ArbitraryFunction parameters 
         """
         def k_func(mu_k, sigma_k,beta):
             B,C,C,ringu = mu_k.shape
-            x_range = torch.arange(-1,1,step=2/discretization_points,device=device)  # (discretization_points,)
+            x_range = torch.arange(0.,1.,step=1/discretization_points,device=device)  # (discretization_points,)
             x_range = x_range[None,None,None,None,:] # (1,1,1,1,discretization_points)
 
             K = torch.exp(-(((x_range - mu_k[...,None]) / sigma_k[...,None]) ** 2) / 2.) # (B,C,C,#of rings, discretization_points)
@@ -387,8 +389,8 @@ class LeniaParams(BatchParams):
         g_evals = g_evals.reshape(B*C*C,discretization_points)
 
         n_coeffs = 15
-        k_arbi = ArbitraryFunction.from_function_evals(k_evals, (-1.,1.), n_coeffs=n_coeffs, device=device)
-        g_arbi = ArbitraryFunction.from_function_evals(g_evals, (0.,2.), n_coeffs=n_coeffs, device=device)
+        k_arbi = OldArbitraryFunction.from_function_evals(k_evals, (0.,1.), n_coeffs=n_coeffs, device=device)
+        g_arbi = OldArbitraryFunction.from_function_evals(g_evals, (0.,2.), n_coeffs=n_coeffs, device=device)
 
         n_harmo = 15*2+1
         params = {
@@ -401,38 +403,95 @@ class LeniaParams(BatchParams):
         }
 
         return LeniaParams(params,device=device)
-
-    @staticmethod
-    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_coeffs=3, k_rescale=(-.3,1.), g_coeffs=2, g_rescale=(-2.,2.), g_clip=0., device='cpu'):
-        """
-            Generates growth and kernel parameters with arbitrary functions, randomly.
-            TODO : Make it better, potentially make many versions of this function
-            Args:
-                batch_size : number of parameters to generate
-                num_channels : number of channels in the automaton
-                k_size : size of the kernel
-                k_harmonics : number of harmonics for the kernel
-                g_harmonics : number of harmonics for the growth
-                g_bounds : tuple, bounds for the growth function
-                device : device on which to generate the parameters
-        """
-        k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=k_coeffs, ranges=(0.,1.),rescale=k_rescale,clips_min=0.,device=device) # Generate random
-        g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=g_coeffs,ranges=(0.,2.),clips_min=g_clip,rescale=g_rescale, device=device) # Generate random
-        
-        params ={
-                'k_size' : k_size,
-                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*k_coeffs+1),
-                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*k_coeffs+1),
-                'k_rescale' : k_rescale,
-                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*g_coeffs+1),
-                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,2*g_coeffs+1),
-                'g_rescale' : g_rescale,
-                'g_clip' : g_clip,
-                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.7*torch.diag(torch.ones(num_channels,device=device)))
-                }
     
+    @staticmethod
+    def to_arbi_params(lenia_params: 'LeniaParams',  discretization_points=1000, device='cpu') -> 'LeniaParams':
+        """
+            Converts LeniaParams to ArbitraryFunction parameters
+        """
+        def k_func(mu_k, sigma_k,beta):
+            B,C,C,ringu = mu_k.shape
+            x_range = torch.arange(0.,1,step=1/discretization_points,device=device)  # (discretization_points,)
+            x_range = x_range[None,None,None,None,:] # (1,1,1,1,discretization_points)
+
+            K = torch.exp(-(((x_range - mu_k[...,None]) / sigma_k[...,None]) ** 2) / 2.) # (B,C,C,#of rings, discretization_points)
+            beta = beta[...,None] # (B,C,C,#of rings, 1)
+            K = torch.sum(beta*K,dim=-2) # (B,C,C,discretization_points)
+
+            return K
+
+        def g_func(mu, sigma):
+            x_range = torch.arange(0,2,step=2/discretization_points,device=device)  # (discretization_points,)
+            x_range = x_range[None,None,None,:] # (1,1,1,discretization_points)
+
+            G = 2*torch.exp(-(((x_range - mu[...,None]) / sigma[..., None]) ** 2) / 2.)-1 # (B,C,C,discretization_points)
+            return G
+        
+        if('mu' in lenia_params):
+            B,C,C  = lenia_params.mu.shape
+            g_evals = g_func(lenia_params.mu, lenia_params.sigma) # (B,C,C,discretization_points)
+            g_evals = g_evals.reshape(B*C*C,discretization_points)
+            g_coeffs = 8
+            g_arbi = ArbitraryFunction.from_function_evals(g_evals, (0.,2.), n_coeffs=g_coeffs, device=device)
+            g_coeffs_val = g_arbi.coefficients.reshape(B,C,C,2*g_coeffs)
+            g_harmonics = g_arbi.harmonics.reshape(B,C,C,g_coeffs)
+        else:
+            g_coeffs_val = lenia_params.g_coeffs
+            g_harmonics = lenia_params.g_harmonics
+
+
+
+        if('mu_k' in lenia_params):
+            B,C,C,_  = lenia_params.mu_k.shape
+            k_evals  = k_func(lenia_params.mu_k, lenia_params.sigma_k, lenia_params.beta) # (B,C,C,discretization_points)
+            k_evals = k_evals.reshape(B*C*C,discretization_points)
+            k_coeffs = 15
+            k_arbi = ArbitraryFunction.from_function_evals(k_evals, (0.,1.), n_coeffs=k_coeffs, device=device)
+            k_coeffs_val = k_arbi.coefficients.reshape(B,C,C,2*k_coeffs)
+            k_harmonics = k_arbi.harmonics.reshape(B,C,C,k_coeffs)
+        else:
+            k_coeffs_val = lenia_params.k_coeffs
+            k_harmonics = lenia_params.k_harmonics
+
+        params = {
+                'k_size' : lenia_params.k_size,
+                'k_coeffs' : k_coeffs_val,
+                'k_harmonics' : k_harmonics,
+                'g_coeffs' : g_coeffs_val,
+                'g_harmonics' : g_harmonics,
+                'weights' : lenia_params.weights
+        }
+
         return LeniaParams(params,device=device)
 
+    @staticmethod
+    def mixed_gen(batch_size, num_channels=3,k_size=None, k_arbi=True,g_arbi=False, k_coeffs=3,k_rescale=(-.3,1.), g_coeffs=2, g_rescale=(-2.,2.), g_clip=None, device='cpu'):
+        params = {'k_size' : k_size,
+                  'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.7*torch.diag(torch.ones(num_channels,device=device)))
+                  }
+        # from_random_gen = LeniaParams.random_gen(batch_size=batch_size,num_channels=num_channels,k_size=k_size,device=device).param_dict
+        from_random_gen = LeniaParams.default_gen(batch_size=batch_size,num_channels=num_channels,k_size=k_size,device=device).param_dict
+        if(k_arbi):
+            k_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=k_coeffs, ranges=(0.,1.),rescale=k_rescale,clips_min=0.,device=device) # Generate random
+            params['k_coeffs'] = k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,k_coeffs*2)
+            params['k_harmonics'] = k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,k_coeffs)
+            params['k_rescale'] = k_rescale
+        else:
+            params['mu_k'] = from_random_gen['mu_k']
+            params['sigma_k'] = from_random_gen['sigma_k']
+            params['beta'] = from_random_gen['beta']
+        if(g_arbi):
+            g_arbi = ArbitraryFunction.random_arbi(func_num = batch_size*num_channels*num_channels, n_coeffs=g_coeffs,ranges=(0.,2.),clips_min=g_clip,rescale=g_rescale, device=device)
+            params['g_coeffs'] = g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,2*g_coeffs)
+            params['g_harmonics'] = g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,g_coeffs)
+            params['g_rescale'] = g_rescale
+            params['g_clip'] = g_clip
+        else:
+            params['mu'] = from_random_gen['mu']
+            params['sigma'] = from_random_gen['sigma']
+        
+        return LeniaParams(params,device=device)
+    
     @staticmethod
     def random_gen(batch_size, num_channels = 3, k_size=None, device='cpu'):
         """

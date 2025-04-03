@@ -148,7 +148,7 @@ class DiffusionLenia(MCLenia):
     )  # Hack to append the docstring of MCLenia.process_event
 
     def get_string_state(self):
-        return f"total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
+        return super().get_string_state()+f" total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
     
     def random_food_chan(self, num_spots=100, food_size=5):
         """

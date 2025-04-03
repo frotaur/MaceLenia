@@ -7,7 +7,7 @@ from modules.main_utils import TextBlock, DropdownMenu, InputField, render_text_
 from pathlib import Path
 
 import pygame_chart as pyc
-
+import torch
 from modules.models.evolvable_diffusion_lenia import EvolvableDiffusionLenia
 from modules.models.flow_lenia import FlowLenia
 
@@ -80,9 +80,6 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     screen = pygame.display.set_mode((sW, sH), flags=pygame.RESIZABLE)
     figure = pyc.Figure(screen, 0.8 * sW, sH // 2, sW * 0.2, sH * 0.2)
 
-
-
-
     clock = pygame.time.Clock()
     running = True
     camera = Camera(W, H)
@@ -95,6 +92,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     recording = False
     launch_vid = True
     display_help = True
+    display_growth = False
     writer = None
 
     # Then when initializing the first automaton:
@@ -103,9 +101,57 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
     description, help_text = auto.get_help()
 
+    # Create figures for growth functions
+
+    def create_growth_figures(screen, sW, sH, C):
+        figure_size = min(sW * 0.15, sH * 0.15)
+        growth_figures = []
+        towards_channel = [(30,0,0), (0,30,0), (0,0,30)]
+        for i in range(auto.C):
+            for j in range(auto.C):
+                x_pos = (sW-auto.C*figure_size) + (j * (figure_size))
+                y_pos = sH * 0.2 + (i * (figure_size))
+                fig = pyc.Figure(screen,  x_pos, y_pos, figure_size, figure_size,bg_color=towards_channel[j])
+                growth_figures.append(fig)
+
+        return growth_figures
+    growth_figures = create_growth_figures(screen, sW, sH, auto.C)
+
+    def plot_growth(auto, figures):
+        if not hasattr(auto, 'growth') or not callable(auto.growth):
+            return
+        x = torch.linspace(0, 2, 100).to(device) # (100,)
+
+        # Sample points from the growth function
+        n_points = len(x)
+        samples = []
+
+        
+        # For each channel pair, sample the growth function
+        C = auto.C if hasattr(auto, 'C') else 3
+        
+        x_expanded = x.reshape(1,1,1,n_points,1) # (B, 1, 1, n_points, 1)
+        x_expanded = x_expanded.expand(1, C, C, n_points, 1) # (B, C, C, n_points, 1)
+        growth_results  = auto.growth(x_expanded) # (B, C, C, n_points, 1)
+        growth_results = growth_results[0] # (C, C, n_points, 1) keep only the first batch
+        for i in range(C):
+            for j in range(C):
+                samples.append(growth_results[i][j])# (n_points, 1)
+        
+        # Update each figure with its corresponding data
+        x_np = x.cpu().tolist()
+        rgb_colors = [(180,10,10), (10,180,10), (10,10,180)]
+        for idx, (fig, data) in enumerate(zip(figures, samples)):
+            if len(figures) > 0:  # Make sure we have figures to plot to
+                fig.set_xlim((0, 2))
+                fig.set_ylim((-2, 2))
+                fig.chart_area.chart_margin = 0
+
+                fig.line('growth', x_np, data.flatten().cpu().tolist(), color=rgb_colors[idx//3])
+                # fig.line(f'jeff{idx}', [-1,-0.5,0.,0.5,1.], [-1,0.3,.2,.5,-.4])
+                # fig.draw()
 
     def display_fig(figure, data):
-
         x = [i for i in range(len(data))]
         figure.line('Chart1', x, data)
         figure.draw()
@@ -223,6 +269,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                     camera.resize(current_sW, current_sH)
                     zoom = min(current_sW / W, current_sH / H)
                     camera.zoom = zoom
+                if event.key == pygame.K_g:
+                    display_growth = not display_growth
+                    plot_growth(auto, growth_figures)
+
 
             if event.type == pygame.VIDEORESIZE:
                 # Get current window size and new window size
@@ -252,7 +302,6 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                 figure.x = int(0.8*new_w)
                 figure.y = int(0.5*new_h)
 
-
                 # Update text sizes
                 text_size = int(new_h / 45)
                 title_size = int(text_size * 1.5)
@@ -267,7 +316,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
                 # Update text blocks with new font
                 text_blocks = make_text_blocks(description, help_text, std_help, font, font_title)
-
+                growth_figures = create_growth_figures(screen, new_w, new_h, auto.C)
+                plot_growth(auto, growth_figures)
             auto.process_event(event, camera)  # Process the event in the automaton
 
             if dropdown.handle_event(event):  # Handle dropdown event
@@ -309,13 +359,12 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         if not stopped:
             auto.step()  # step the automaton
 
+
         auto.draw()  # draw the worldstate
         world_surface = auto.worldsurface
 
         # Clear the screen
         screen.fill((0, 0, 0))
-
-
 
         # Draw the scaled surface on the window
         zoomed_surface = camera.apply(world_surface, border=True)
@@ -346,11 +395,18 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             fps_input.draw()
 
         display_live_text(auto, font, screen)
-        # Update the screen
+
+        # Update growth plots
+        if display_growth:
+            for fig in growth_figures:
+                fig.draw()
+            
+        # Draw masses graph if available
         if hasattr(auto, "masses"):
             data = auto.masses
             figure.set_ylim((min(data)-5, max(data)+6))
             display_fig(figure,data)
+            
         pygame.display.flip()
 
         clock.tick(fps)  # limits FPS to 60
