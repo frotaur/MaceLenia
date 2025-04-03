@@ -46,6 +46,14 @@ class Automaton:
             The camera object. Need for the call to self.get_mouse_state.
         """
         pass
+    
+    def resize(self,new_size):
+        """
+        Resize the worldmap to a new size. The new size must be a tuple of (H,W).
+        """
+        self.h, self.w = new_size
+        self.size = new_size
+        self._worldmap = torch.zeros((3, self.h, self.w), dtype=float)
 
     @property
     def worldmap(self):

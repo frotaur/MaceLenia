@@ -333,7 +333,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                         W = new_w
                         current_sW, current_sH = screen.get_size()
                         # Recreate automaton with new size
-                        auto = automaton_options[dropdown.current_option](H, W)
+                        # auto = automaton_options[dropdown.current_option](H, W)
+                        auto.resize((H, W))
                         camera = Camera(W, H)
                         camera.resize(current_sW, current_sH)
                         zoom = min(current_sW / W, current_sH / H)
@@ -345,7 +346,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                         H = new_h
                         current_sW, current_sH = screen.get_size()
                         # Recreate automaton with new size
-                        auto = automaton_options[dropdown.current_option](H, W)
+                        # auto = automaton_options[dropdown.current_option](H, W)
+                        auto.resize((H, W))
                         camera = Camera(W, H)
                         camera.resize(current_sW, current_sH)
                         zoom = min(current_sW / W, current_sH / H)

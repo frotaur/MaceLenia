@@ -6,7 +6,7 @@ from .utils.leniaparams import LeniaParams
 import random, pygame
 from .automaton import Automaton
 from pathlib import Path
-from .utils.funcgen import ArbitraryFunction, OldArbitraryFunction
+from .utils.funcgen import ArbitraryFunction
 from copy import deepcopy
 
 
@@ -59,7 +59,6 @@ class MCLenia(DevModule, Automaton):
         self.batch = size[0]
         self.h, self.w = size[1:]
         self.C = num_channels
-        self.use_arbi = False
 
         if params is None:
             # Generates random parameters
@@ -94,6 +93,9 @@ class MCLenia(DevModule, Automaton):
         )  # raw weigths for the growth weighted sum (B,C,C)
         self.register_buffer("kernel", torch.zeros((self.k_size, self.k_size)))
 
+        # For the generation, whether to use the arbitrary function or not
+        self.g_arbi = False
+        self.k_arbi = False
         self.update_params(self.params)
 
         # For interactivity and visualization
@@ -105,9 +107,7 @@ class MCLenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
-        # For the generation, whether to use the arbitrary function or not
-        self.g_arbi = False
-        self.k_arbi = False
+
 
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
@@ -142,15 +142,36 @@ class MCLenia(DevModule, Automaton):
         self.params = LeniaParams(param_dict=params, device=self.device)
 
         self.batch = self.mu.shape[0]  # update batch size
-        if self.use_arbi and not ("k_harmonics" in params):
-            self.params = LeniaParams.to_arbi_params(lenia_params=self.params, device=self.device)
 
-        self.k = self.compute_kernel(force_standard=not self.use_arbi)  # (B,C,C,k_size,k_size)
-        self.growth = self.compute_growth(force_standard=not self.use_arbi)  # growth function, callable
+
+        if(self.k_arbi and not 'k_harmonics' in self.params):
+            transl_params = self.params.to_arbi_params(lenia_params=self.params, device=self.device) # translate
+            self.params["k_harmonics"] = transl_params["k_harmonics"]
+            self.params["k_coeffs"] = transl_params["k_coeffs"]
+            self.params["k_rescale"] = transl_params["k_rescale"]
+    
+        if(self.g_arbi and not 'g_harmonics' in self.params):
+            transl_params = self.params.to_arbi_params(lenia_params=self.params, device=self.device) # translate
+            self.params["g_harmonics"] = transl_params["g_harmonics"]
+            self.params["g_coeffs"] = transl_params["g_coeffs"]
+            self.params["g_rescale"] = transl_params["g_rescale"]
+            self.params["g_clip"] = transl_params["g_clip"]
+
+        self.k = self.compute_kernel()  # (B,C,C,k_size,k_size)
+        self.growth = self.compute_growth()  # growth function, callable
 
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
 
         # self.norm_weights() => not needed anymore, automatically normalized in LeniaParams
+
+    def resize(self, new_size):
+        """
+            Recomputes fft_kernel for it to work
+        """
+        super().resize(new_size)
+        self.k = self.compute_kernel()
+        self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
+        self.state = F.interpolate(self.state, size=new_size, mode="bilinear", align_corners=False)
 
     def set_init_fractal(self):
         """
@@ -233,7 +254,7 @@ class MCLenia(DevModule, Automaton):
 
         return K  # (B,C,C,k_size, k_size)
 
-    def compute_kernel(self, force_standard=False):
+    def compute_kernel(self):
         """
         Computes the kernel given the current parameters. Uses in priority
         arbitrary function if provided, else uses the standard way.
@@ -246,7 +267,8 @@ class MCLenia(DevModule, Automaton):
         )  # (k_size,k_size),  axis directions is x increasing to the right, y increasing to the bottom
         r = torch.sqrt(X**2 + Y**2)  # (k_size,k_size)
 
-        if "k_harmonics" in self.params.param_dict and not (force_standard):
+        if self.k_arbi:
+            assert 'k_coeffs' in self.params.param_dict, "k_coeffs not in params"
             harmonics = self.params["k_harmonics"].reshape(
                 self.batch * self.C * self.C, -1
             )  # (B*C*C,# of harmonics)
@@ -264,7 +286,7 @@ class MCLenia(DevModule, Automaton):
                 clips_min=0.0,
                 device=self.device,
             )
-            K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (B,C,C,k_size,k_size)
+            K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (BCC,k_size,k_size)
             K = K.reshape(self.batch, self.C, self.C, self.k_size, self.k_size)
             K = create_smooth_circular_mask(K, self.k_size // 2)
         else:
@@ -291,13 +313,14 @@ class MCLenia(DevModule, Automaton):
 
         return K  # (B,C,C,h,w)
 
-    def compute_growth(self, force_standard=False):
+    def compute_growth(self):
         """
         Constructs the growth function given current parameters.
         By default, uses the ArbitraryFunction way if the necessary parameters are defined
         """
 
-        if "g_harmonics" in self.params.param_dict and not (force_standard):
+        if self.g_arbi:
+            assert 'g_coeffs' in self.params.param_dict, "g_coeffs not in params, but g_arbi is True"
             # Use ArbitraryFunction
             coeffs = self.params["g_coeffs"].reshape(
                 self.batch * self.C * self.C, -1
@@ -416,6 +439,7 @@ class MCLenia(DevModule, Automaton):
         L -> Initialize with random wavelength perlin
         S -> Save the current parameters
         K -> Toggle display kernel
+        X -> Toggle use of arbitrary function
         Y (+shift) -> Toggle arbi random param generation
         DEL -> sets state to 0
         """
@@ -438,9 +462,11 @@ class MCLenia(DevModule, Automaton):
                     k_size=31,
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
-                    k_coeffs=6
+                    k_coeffs=6,
+                    g_coeffs=3
                 )
                 self.update_params(params, k_size_override=None)
+
             if event.key == pygame.K_u:
                 """ Variate around parameters"""
                 mutated_params = self.params.mutate(magnitude=0.1, rate=0.8)
@@ -462,6 +488,8 @@ class MCLenia(DevModule, Automaton):
                     self.g_arbi = not self.g_arbi
                 else:
                     self.k_arbi = not self.k_arbi
+                
+                self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
             if event.key == pygame.K_m:
                 if self.interest_files:
                     # Load random interesting param, if we have some
@@ -478,15 +506,28 @@ class MCLenia(DevModule, Automaton):
                 else:
                     # Save the current parameters to remarkable dir :
                     self.params.save_indiv(self.save_dir, annotation=["_nice"])
-            if event.key == pygame.K_x:
-                self.use_arbi = not self.use_arbi
-                print("Use arbi :", self.use_arbi)
-                self.update_params(self.params, k_size_override=None)
             if event.key == pygame.K_k:
                 # Toggle display kernel
                 self.display_kernel = not self.display_kernel
             if event.key == pygame.K_DELETE | pygame.K_BACKSPACE:
                 self.state = torch.zeros_like(self.state)
+            if event.key == pygame.K_t:
+                # Modify it when testing
+                params = LeniaParams.exp_decay_gen(
+                    batch_size=self.batch, 
+                    num_channels=self.C, 
+                    device=self.device, 
+                    k_size=31,
+                    k_arbi=self.k_arbi,
+                    g_arbi=self.g_arbi,
+                    k_decay=2.,
+                    g_decay=2.,
+                    k_coeffs=6,
+                    k_rescale=(-0.3,1.),
+                    g_coeffs=4,
+                    )
+                self.update_params(params, k_size_override=None)
+                    
 
     def compute_ker(self, batch=0):
         """
