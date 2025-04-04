@@ -196,7 +196,7 @@ class EvolvableDiffusionLenia(DiffusionLenia):
 
             non_parent_ids = [i for i in range(self.batch) if i != quadrant_index]
 
-            self.params[non_parent_ids] = self.mutate(rate=0.05, magnitude=0.05, params=self.params[non_parent_ids], p_idxs=non_parent_ids)
+            self.params[non_parent_ids] = self.mutate(rate=0.1, magnitude=0.1, params=self.params[non_parent_ids], p_idxs=non_parent_ids)
             self.update_params(self.params, k_size_override=None)
             self.set_init_circle()
 

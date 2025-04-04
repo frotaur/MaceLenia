@@ -258,9 +258,17 @@ class DiffusionLenia(MCLenia):
 
             mod_state = self.state.clone()
             mod_state[:, :, :, 0:5] = 1
-            mod_state[:, :, :, -5:-1] = 1
+            mod_state[:, :, :, -5:] = 1
             mod_state[:, :, 0:5, :] = 1
-            mod_state[:, :, -5:-1, :] = 1
+            mod_state[:, :, -5:, :] = 1
+
+            if self.display_kernel == True:
+                for j in range(self.batch):
+                    kern = self.compute_ker(batch=j)  # (C,3,k_size,k_size)
+                    for i in range(kern.shape[0]):
+                        mod_state[j,:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
+                            i
+                        ].cpu()
 
 
 
