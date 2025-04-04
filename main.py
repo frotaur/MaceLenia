@@ -63,13 +63,13 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             ),
 
         "EvolvableDiffusionLenia": lambda h, w: EvolvableDiffusionLenia(
-            (16, h, w),
+            (4, h, w),
             dt=0.1,
             num_channels=3,
             save_dir="saved_diff_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
-            has_food=True,
+            has_food=False,
         ),
     }
     sW, sH = screen
@@ -327,7 +327,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
         # Draw the scaled surface on the window
-        zoomed_surface = camera.apply(world_surface, border=True)
+        zoomed_surface = camera.apply(world_surface, border=False)
         screen.blit(zoomed_surface, (0, 0))
 
         if recording:
@@ -370,4 +370,4 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 if __name__ == "__main__":
 
-    gameloop((1280, 720), (500, 500), "cuda:0")
+    gameloop((1920, 1080), (500, 500), "cuda:0")

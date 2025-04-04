@@ -5,12 +5,13 @@ from nltk.downloader import update
 from .diffusion_lenia_cross_channel import DiffusionLeniaCrossChannel
 from .lenia import MCLenia
 import random
-
+import showtens
 from .utils.leniaparams import LeniaParams, BatchParams
 from .. import DiffusionLenia
+import itertools
+import math
 
-
-class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
+class EvolvableDiffusionLenia(DiffusionLenia):
     """ An evolvable version of DiffusionLenia"""
 
     def __init__(
@@ -48,7 +49,7 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
             has_food=has_food
         )
 
-        assert (self.batch % 2) == 0, "The batch size for evolution must be even"
+        assert ((self.batch % 2) == 0) and ((math.sqrt(self.batch)).is_integer()), "The batch size for evolution must be even and a square number (e.g. 4,16, 36) "
         self.set_init_circle()
         self.state[:,...] = self.state[0,...]
         self.params = LeniaParams.default_gen(batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31)
@@ -59,9 +60,12 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
         self._temp = 10
         self.masses = [8000,8000]
         self.base_state = self.state.clone()
-        self.base_food = self.food_channel.clone()
+        if self.has_food:
+            self.base_food = self.food_channel.clone()
         self.mutation_params = self.get_es_params()
         self.split = self.batch//2
+        self.show_all = False
+        self.manual_evolution = False
 
 
 
@@ -74,8 +78,10 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
         return params
 
     def step(self):
-        self.keep_track()
+
         super().step(sense_food=True)
+        if not self.manual_evolution:
+            self.keep_track()
 
 
 
@@ -121,9 +127,23 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
 
         return new_pop, parent_mutation_params
 
+    def channel_mass_diff(self) -> torch.Tensor:
+
+        indices = range(self.C)
+
+        combination_tuples = itertools.combinations(indices, 2)
+        sum_tensor = torch.zeros(self.batch, device=self.device)
+        for pair in combination_tuples:
+            sum_tensor += torch.abs(self.state[pair[0]].view(self.batch, -1).sum(dim=1) - self.state[pair[1]].view(self.batch, -1).sum(dim=1))
+
+        return sum_tensor
+
+
     def tournament_selection(self, num_winners: int, some_diversity: bool = False) -> list[int]:
         self.batch_mass = self.state.view(self.batch, -1).sum(dim=1)
-        mass_idxs = torch.argsort(self.batch_mass, descending=True, stable=True)
+
+        #self.batch_mass = torch.nan_to_num(self.batch_mass, nan=-10000000.0)
+        mass_idxs = torch.argsort(self.batch_mass, descending=True)
         if some_diversity:
             best_idxs = mass_idxs[:num_winners-1].tolist()
             diversity = mass_idxs[-(self.batch//4)].tolist()
@@ -134,18 +154,68 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
         return best_idxs
 
 
-    def mutate(self, rate: float, magnitude:float, params: LeniaParams) -> LeniaParams:
+    def mutate(self, rate: float, magnitude:float, params: LeniaParams, p_idxs :list[int] = None) -> LeniaParams:
         new_params = {}
         n_0_1 = torch.randn((self.batch), device=self.device )
         for key in params.param_dict.keys():
             if isinstance(params[key], torch.Tensor):
                 self.mutation_params[key] = self.mutation_params[key] * torch.exp(n_0_1 - torch.randn_like(self.mutation_params[key]))
                 mask = torch.rand_like(params[key]) < rate
-
-                new_params[key] = params[key].clone() + torch.randn_like(params[key]) * magnitude * mask * torch.sqrt(self.mutation_params[key][:self.split].view(*params[key].shape[:1], *([1] * (params[key].dim() - 1))))
+                if p_idxs is None:
+                    new_params[key] = params[key].clone() + torch.randn_like(params[key]) * magnitude * mask * torch.sqrt(self.mutation_params[key][:self.split].view(*params[key].shape[:1], *([1] * (params[key].dim() - 1))))
+                else:
+                    new_params[key] = params[key].clone() + torch.randn_like(
+                        params[key]) * magnitude * mask * torch.sqrt(
+                        self.mutation_params[key][p_idxs].view(*params[key].shape[:1],
+                                                                    *([1] * (params[key].dim() - 1))))
 
             else : new_params[key] = params[key]
         return LeniaParams(param_dict=new_params, device=self.device)
 
     def get_string_state(self):
-        return f"total mass: {self.state[self.show_batch].sum().item() + self.food_channel[self.show_batch].sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}, counter: {self.counter}, Best mass: {self.batch_mass.max().item():.2f}"
+        return f"total mass: {self.state[self.show_batch].sum().item() :.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}, counter: {self.counter}, Best mass: {self.batch_mass.max().item():.2f}, Manual Evolution: {self.manual_evolution}"
+
+
+
+    def manual_evolution_trigger(self, camera = None):
+        keys = self.get_mouse_state(camera=camera)
+        if keys["left"]:
+            adjusted_h = self.size[0]*2
+            adjusted_w = self.size[1]*2
+            click_x = keys["x"]
+            click_y = keys["y"]
+            subdivisions_per_side = math.sqrt(self.batch)
+            col_index = int(click_x * subdivisions_per_side // adjusted_h)
+            row_index = int(click_y * subdivisions_per_side // adjusted_w)
+            quadrant_index = int((row_index * subdivisions_per_side) + col_index)
+            print(quadrant_index)
+            parent = self.params[quadrant_index]
+            self.params[:] = parent
+            for k,v in self.mutation_params.items():
+                self.mutation_params[k][:,...] = self.mutation_params[k][quadrant_index,...]
+
+            non_parent_ids = [i for i in range(self.batch) if i != quadrant_index]
+
+            self.params[non_parent_ids] = self.mutate(rate=0.05, magnitude=0.05, params=self.params[non_parent_ids], p_idxs=non_parent_ids)
+            self.update_params(self.params, k_size_override=None)
+            self.set_init_circle()
+
+
+
+
+    def process_event(self, event, camera=None):
+        """
+        LMB -> In manual Evolution, Select Params to mutate
+        V - > Toggles manual evolution
+        """
+        super().process_event(event, camera)
+
+        if (event.type  == pygame.MOUSEBUTTONDOWN) and self.manual_evolution:
+            mods = pygame.key.get_mods()
+            if not (mods & pygame.KMOD_LCTRL):
+                self.manual_evolution_trigger(camera=camera)
+
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_v:
+                self.manual_evolution = not self.manual_evolution
+                self.show_all_override = self.manual_evolution

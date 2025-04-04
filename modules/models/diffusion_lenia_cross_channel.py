@@ -140,7 +140,7 @@ class DiffusionLeniaCrossChannel(MCLenia):
         """
         Computes the affinity matrix of the model
         """
-        if sense_food:
+        if sense_food and self.has_food:
             a = self.state.clone()
             a[:,0:1,...] += self.food_channel
             Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions

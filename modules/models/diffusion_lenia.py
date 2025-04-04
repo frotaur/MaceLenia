@@ -2,9 +2,10 @@ import torch, torch.nn, torch.nn.functional as F
 import pygame
 from nltk.downloader import update
 from numpy.ma.core import minimum
-
+import showtens
 from .lenia import MCLenia
 import random
+import math
 
 class DiffusionLenia(MCLenia):
     """
@@ -49,6 +50,9 @@ class DiffusionLenia(MCLenia):
         self.Aff = self.compute_affinity()
         self.show_batch = 0
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
+        self.show_all = False
+        self.show_all_override = False
+
         
 
     def step(self, sense_food = False):
@@ -126,7 +130,7 @@ class DiffusionLenia(MCLenia):
         """
         Computes the affinity matrix of the model
         """
-        if sense_food:
+        if sense_food and self.has_food:
             a = self.state.clone()
             a[:,0:1,...] += self.food_channel
             Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
@@ -153,6 +157,7 @@ class DiffusionLenia(MCLenia):
         DOWN -> Decrease temperature
         PLUS -> Show next batch
         MINUS -> Show previous batch
+        B -> Toggle show all batches at once
         """
         super().process_event(event, camera)
         if event.type == pygame.KEYDOWN:
@@ -164,6 +169,8 @@ class DiffusionLenia(MCLenia):
                 self.update_show_batch(1)
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
+            if event.key == pygame.K_b:
+                self.show_all = ~ self.show_all
 
     process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
@@ -224,26 +231,49 @@ class DiffusionLenia(MCLenia):
         """
             Draws the RGB worldmap from state.
         """
-        #assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
+        # assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
+        if (not self.show_all) and (not self.show_all_override)  :
+            toshow = self.state[self.show_batch].clone()  # (C,H,W), pygame conversion done later
 
-        toshow= self.state[self.show_batch].clone() # (C,H,W), pygame conversion done later
+            if (self.C == 1):
+                toshow = toshow.repeat(3, 1, 1)  # (3,H,W)
+            elif (self.C == 2):
+                toshow = torch.cat([toshow, torch.zeros_like(toshow)], dim=0)  # (3,H,W)
+            else:
+                toshow = toshow[:3, :, :]  # (3,H,W)
 
-        if(self.C==1):
-            toshow = toshow.repeat(3,1,1) # (3,H,W)
-        elif(self.C==2):
-            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=0) # (3,H,W)
-        else :
-            toshow = toshow[:3,:,:] # (3,H,W)
+            if self.has_food:
+                toshow[:, :, :] += self.food_channel[self.show_batch]  # (1,H,W)
 
-        if self.has_food:
-            toshow[:,:,:] += self.food_channel[self.show_batch]# (1,H,W)
+            if self.display_kernel == True:
+                kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
+                for i in range(kern.shape[0]):
+                    toshow[:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
+                        i
+                    ].cpu()
 
-        if self.display_kernel == True:
-            kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
-            for i in range(kern.shape[0]):
-                toshow[:, self.h - self.k_size : self.h, i * self.k_size : (i + 1) * self.k_size] = kern[
-                    i
-                ].cpu()
+            self._worldmap = torch.clamp(toshow, 0., 1.)
 
-        self._worldmap= torch.clamp(toshow,0.,1.) 
+        else:
+
+            mod_state = self.state.clone()
+            mod_state[:, :, :, 0:5] = 1
+            mod_state[:, :, :, -5:-1] = 1
+            mod_state[:, :, 0:5, :] = 1
+            mod_state[:, :, -5:-1, :] = 1
+
+
+
+            toshow = showtens.gridify(mod_state, max_width=self.size[1]*2, columns=int(math.sqrt(self.batch)))
+            if (self.C == 1):
+                toshow = toshow.repeat(3, 1, 1)  # (3,H,W)q
+            elif (self.C == 2):
+                toshow = torch.cat([toshow, torch.zeros_like(toshow)], dim=0)  # (3,H,W)
+            else:
+                toshow = toshow[:3, :, :]  # (3,H,W)
+
+            if self.has_food:
+                toshow[:, :, :] += showtens.gridify(self.food_channel, max_width=self.size[1]*2, columns= int(math.sqrt(self.batch)))  # (1,H,W)
+
+            self._worldmap = torch.clamp(toshow, 0., 1.)
 

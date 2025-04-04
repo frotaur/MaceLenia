@@ -124,11 +124,19 @@ def get_reference_image_and_seed(path, height = 50, width =50, channels =16):
     base_2[..., :3] *= base_2[..., 3:]
     base_torch = torch.tensor(base_2, dtype=torch.float32, requires_grad=True).permute((2, 0, 1)).to(DEVICE)
     x_prime = torch.zeros((channels, height, width), dtype=torch.float32).to(DEVICE)
-    x_prime[:3, int(height / 2), int(width / 2)] = 200
+    x_prime[:3, int(height / 2), int(width / 2)] = 233
     return base_torch, x_prime
 
 def to_vue_image(tensor):
     return tensor.cpu().permute((1, 2, 0)).clone().detach().numpy()
+
+
+def double_mass(state, max):
+    B, C, H, W = state.shape
+    n_state = [state[i,:3].clone() *2 if (state[i,:3].sum() *2) < max else state[i,:3] for i in range(B)]
+    n_state = torch.stack(n_state, dim=0)
+
+    return torch.cat((n_state, state[:,3:]), dim=1)
 
 #%%
 
@@ -145,9 +153,13 @@ nca.to(DEVICE).eval()
 
 
 seed = torch.zeros((BATCH_SIZE, CHANNELS ,HEIGHT, WIDTH), device=DEVICE)
-seed[:,:3,int(HEIGHT/ 2), int(WIDTH / 2)] = 200
+seed[:,:3,int(HEIGHT/ 2), int(WIDTH / 2)] = 100
 x = seed
-for i in range(6000):
+for i in range(60000):
+
+    if ((i % 10) == 0) and (i > 0):
+        with torch.no_grad():
+            x = double_mass(x, 701)
 
     x = nca(x)
 
@@ -158,5 +170,5 @@ for i in range(6000):
 
     cv2.imshow("image", image)
 
-    cv2.waitKey(100)
+    cv2.waitKey(1)
     # print(i)
