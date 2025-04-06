@@ -11,7 +11,7 @@ from .. import DiffusionLenia
 import itertools
 import math
 
-class EvolvableDiffusionLenia(DiffusionLenia):
+class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
     """ An evolvable version of DiffusionLenia"""
 
     def __init__(
@@ -205,6 +205,11 @@ class EvolvableDiffusionLenia(DiffusionLenia):
 
     def process_event(self, event, camera=None):
         """
+        UP -> Increase temperature
+        DOWN -> Decrease temperature
+        PLUS -> Show next batch
+        MINUS -> Show previous batch
+        B -> Toggle show all batches at once
         LMB -> In manual Evolution, Select Params to mutate
         V - > Toggles manual evolution
         """

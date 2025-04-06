@@ -63,7 +63,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             ),
 
         "EvolvableDiffusionLenia": lambda h, w: EvolvableDiffusionLenia(
-            (4, h, w),
+            (16, h, w),
             dt=0.1,
             num_channels=3,
             save_dir="saved_diff_lenia",

@@ -226,6 +226,8 @@ class DiffusionLenia(MCLenia):
             self.food_channel = self.random_food_chan() # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
 
+
+
     @torch.no_grad()
     def draw(self):
         """
@@ -255,6 +257,7 @@ class DiffusionLenia(MCLenia):
             self._worldmap = torch.clamp(toshow, 0., 1.)
 
         else:
+
 
             mod_state = self.state.clone()
             mod_state[:, :, :, 0:5] = 1

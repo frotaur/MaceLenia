@@ -4,11 +4,12 @@ from nltk.downloader import update
 from numpy.ma.core import minimum
 from sympy.abc import alpha
 
+from .. import DiffusionLenia
 from ..models.utils.torch_utils import unfold3d
 from .lenia import MCLenia
 import random
 
-class DiffusionLeniaCrossChannel(MCLenia):
+class DiffusionLeniaCrossChannel(DiffusionLenia):
     """
     Mass conserving Lenia-like Alife model
     """
@@ -233,31 +234,5 @@ class DiffusionLeniaCrossChannel(MCLenia):
             self.food_channel = self.random_food_chan() # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
 
-    @torch.no_grad()
-    def draw(self):
-        """
-            Draws the RGB worldmap from state.
-        """
-        #assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
 
-        toshow= self.state[self.show_batch].clone() # (C,H,W), pygame conversion done later
-
-        if(self.C==1):
-            toshow = toshow.repeat(3,1,1) # (3,H,W)
-        elif(self.C==2):
-            toshow = torch.cat([toshow,torch.zeros_like(toshow)],dim=0) # (3,H,W)
-        else :
-            toshow = toshow[:3,:,:] # (3,H,W)
-
-        if self.has_food:
-            toshow[:,:,:] += self.food_channel[self.show_batch]# (1,H,W)
-
-        if self.display_kernel == True:
-            kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
-            for i in range(kern.shape[0]):
-                toshow[:, self.h - self.k_size : self.h, i * self.k_size : (i + 1) * self.k_size] = kern[
-                    i
-                ].cpu()
-
-        self._worldmap= torch.clamp(toshow,0.,1.) 
 
