@@ -334,16 +334,16 @@ class LeniaParams(BatchParams):
         Sanitizes the parameters by clamping them to valid values.
         """
         param_keys = self.param_dict.keys()
-        if "mu" in param_keys:
-            self.mu = torch.clamp(self.mu, 0, 2)
-        if "sigma" in param_keys:
-            self.sigma = torch.clamp(self.sigma, 1e-3, None)
-        if "beta" in param_keys:
-            self.beta = torch.clamp(self.beta, 0, None)
-        if "mu_k" in param_keys:
-            self.mu_k = torch.clamp(self.mu_k, 0, 2)
-        if "sigma_k" in param_keys:
-            self.sigma_k = torch.clamp(self.sigma_k, 1e-3, None)
+        if('mu' in param_keys):
+            self.mu = torch.clamp(self.mu,-2,2)
+        if('sigma' in param_keys):
+            self.sigma = torch.clamp(self.sigma,1e-4,1.0)
+        if('beta' in param_keys):
+            self.beta = torch.clamp(self.beta,0, None)
+        if('mu_k' in param_keys):
+            self.mu_k = torch.clamp(self.mu_k,0.,2.)
+        if('sigma_k' in param_keys):
+            self.sigma_k = torch.clamp(self.sigma_k,1e-4,1.0)
 
         self.weights = torch.clamp(self.weights, 0, None)
         ## Normalize weights
@@ -511,24 +511,44 @@ class LeniaParams(BatchParams):
         )
 
         params = {
-            "k_size": k_size if k_size is not None else k_size,
-            "mu": mu,
-            "sigma": sigma,
-            "beta": torch.rand((batch_size, num_channels, num_channels, 3), device=device),
-            "mu_k": 0.5 + 0.2 * torch.randn((batch_size, num_channels, num_channels, 3), device=device),
-            "sigma_k": 0.05
-            * (
-                1
-                + torch.clamp(
-                    0.3 * torch.randn((batch_size, num_channels, num_channels, 3), device=device), min=-0.9
-                )
-                + 1e-4
-            ),
-            "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
-            * (1 - 0.8 * torch.diag(torch.ones(num_channels, device=device))),
-        }
-
-        return LeniaParams(params, device=device)
+                'k_size' : k_size if k_size is not None else k_size, 
+                'mu':  mu ,
+                'sigma' : sigma,
+                'beta' : torch.rand((batch_size,num_channels,num_channels,3), device=device), 
+                'mu_k' : 0.5+0.2*torch.randn((batch_size,num_channels,num_channels,3), device=device), 
+                'sigma_k' : 0.05*(1+torch.clamp(0.3*torch.randn((batch_size,num_channels,num_channels,3), device=device),min=-0.9)+1e-4),
+                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device))),
+            }
+        
+        return LeniaParams(params,device=device)
+    
+    @staticmethod
+    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=3, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
+        """
+            Generates growth and kernel parameters with arbitrary functions, randomly.
+            TODO : Make it better, potentially make many versions of this function
+            Args:
+                batch_size : number of parameters to generate
+                num_channels : number of channels in the automaton
+                k_size : size of the kernel
+                k_harmonics : number of harmonics for the kernel
+                g_harmonics : number of harmonics for the growth
+                g_bounds : tuple, bounds for the growth function
+                device : device on which to generate the parameters
+        """
+        k_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics) # Generate random
+        g_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
+        
+        params ={
+                'k_size' : k_size,
+                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,k_harmonics),
+                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,k_harmonics),
+                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,g_harmonics),
+                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,g_harmonics),
+                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
+                }
+    
+        return LeniaParams(params,device=device)
 
     @staticmethod
     def random_gen(batch_size, num_channels=3, k_size=None, device="cpu"):

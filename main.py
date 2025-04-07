@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pygame_chart as pyc
 import torch
+
+from modules.models.diffusion_lenia_cross_channel import DiffusionLeniaCrossChannel
 from modules.models.evolvable_diffusion_lenia import EvolvableDiffusionLenia
 from modules.models.flow_lenia import FlowLenia
 
@@ -25,6 +27,15 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
+            (1, h, w),
+            dt=0.1,
+            num_channels=3,
+            device=device,
+            has_food=False,
+            save_dir="saved_diff_lenia",
+            interest_files=(cur_dir / "demo_params").as_posix(),
+        ),
+        "DiffusionLeniaCrossChannel": lambda h, w: DiffusionLeniaCrossChannel(
             (1, h, w),
             dt=0.1,
             num_channels=3,
@@ -60,7 +71,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             save_dir="saved_diff_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
-            has_food=True,
+            has_food=False,
         ),
     }
     sW, sH = screen
@@ -133,7 +144,11 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         x_expanded = x.reshape(1,1,1,n_points,1) # (B, 1, 1, n_points, 1)
         x_expanded = x_expanded.expand(1, C, C, n_points, 1) # (B, C, C, n_points, 1)
         growth_results  = auto.growth(x_expanded) # (B, C, C, n_points, 1)
-        growth_results = growth_results[0] # (C, C, n_points, 1) keep only the first batch
+        if(hasattr(auto, 'show_batch')):
+            growth_show = auto.show_batch
+        else :
+            growth_show = 0
+        growth_results = growth_results[growth_show] # (C, C, n_points, 1) keep only the first batch
         for i in range(C):
             for j in range(C):
                 samples.append(growth_results[i][j])# (n_points, 1)
@@ -369,7 +384,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         screen.fill((0, 0, 0))
 
         # Draw the scaled surface on the window
-        zoomed_surface = camera.apply(world_surface, border=True)
+        zoomed_surface = camera.apply(world_surface, border=False)
         screen.blit(zoomed_surface, (0, 0))
 
         if recording:
@@ -418,4 +433,4 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 if __name__ == "__main__":
 
-    gameloop((1280, 720), (500, 500), "cuda:0")
+    gameloop((1920, 1080), (500, 500), "cuda:0")

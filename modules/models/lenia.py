@@ -439,7 +439,6 @@ class MCLenia(DevModule, Automaton):
         L -> Initialize with random wavelength perlin
         S -> Save the current parameters
         K -> Toggle display kernel
-        X -> Toggle use of arbitrary function
         Y (+shift) -> Toggle arbi random param generation
         DEL -> sets state to 0
         """

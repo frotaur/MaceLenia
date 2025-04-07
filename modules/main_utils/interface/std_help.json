@@ -8,7 +8,8 @@
                 "R": "record the simulation",
                 "P": "screenshot the simulation",
                 "Q": "quit the simulation",
-                "C": "reset the camera"
+                "C": "reset the camera",
+                "G": "display growths"
             }
         },
         {

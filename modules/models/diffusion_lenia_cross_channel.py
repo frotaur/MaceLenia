@@ -2,12 +2,14 @@ import torch, torch.nn, torch.nn.functional as F
 import pygame
 from nltk.downloader import update
 from numpy.ma.core import minimum
-import showtens
+from sympy.abc import alpha
+
+from .. import DiffusionLenia
+from ..models.utils.torch_utils import unfold3d
 from .lenia import MCLenia
 import random
-import math
 
-class DiffusionLenia(MCLenia):
+class DiffusionLeniaCrossChannel(DiffusionLenia):
     """
     Mass conserving Lenia-like Alife model
     """
@@ -50,9 +52,6 @@ class DiffusionLenia(MCLenia):
         self.Aff = self.compute_affinity()
         self.show_batch = 0
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
-        self.show_all = False
-        self.show_all_override = False
-
         
 
     def step(self, sense_food = False):
@@ -73,6 +72,8 @@ class DiffusionLenia(MCLenia):
         B, C, H, W = self.state.shape
 
         Aff = self.compute_affinity(sense_food=sense_food)
+
+
         Aff_exp = F.pad(Aff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
         Aff_exp = F.unfold(Aff_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
         E = Aff_exp.sum(dim=2)
@@ -82,6 +83,20 @@ class DiffusionLenia(MCLenia):
         state_exp = F.unfold(state_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
 
         self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
+
+        min_aff = Aff.min()
+        max_aff = Aff.max()
+        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-6)
+        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True))
+
+        target_cross_c_masses = self.state.sum(dim=1, keepdim=True) * Aff_c
+        diff_target = self.state - target_cross_c_masses
+        alpha = 0.4/self._temp
+        self.state -= diff_target * alpha
+
+
+
+
 
         if self.has_food:
 
@@ -98,13 +113,11 @@ class DiffusionLenia(MCLenia):
 
             self.update_food(min_density=0.05,transfer_rate=0.06, death_enabled=False)
 
-
-
-
-    def update_food(self, min_density =0.1, transfer_rate = 0.03, death_enabled = False):
+    def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
         """uncomment the death sections for death mechanics, but its finicky and i dont like it """
         where_food = self.food_channel > 0  # Where the food channels are
-        where_contact = (self.state.sum(dim=1)[:, None, :, :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
+        where_contact = (self.state[:, 2:3, :,
+                         :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
 
         if death_enabled:
             death = ((self.state < 0.04) & (self.state > 0)) * self.state  # death of the feeding channel, very finicky
@@ -112,11 +125,9 @@ class DiffusionLenia(MCLenia):
         overlap = where_food & where_contact  # where the channels overlap
         transfer = torch.minimum(self.food_channel, torch.ones_like(where_food) * overlap * transfer_rate)
 
-        self.state += transfer/3  # Lenia mass increase
-
+        self.state[:, 1:2, ...] += transfer  # Lenia mass increase
 
         self.food_channel -= transfer
-
 
         if death_enabled:
             self.state -= death
@@ -153,11 +164,7 @@ class DiffusionLenia(MCLenia):
 
     def process_event(self, event, camera=None):
         """
-        UP -> Increase temperature
-        DOWN -> Decrease temperature
-        PLUS -> Show next batch
-        MINUS -> Show previous batch
-        B -> Toggle show all batches at once
+        PLUS/MINUS -> Show next/previous batch
         """
         super().process_event(event, camera)
         if event.type == pygame.KEYDOWN:
@@ -169,15 +176,14 @@ class DiffusionLenia(MCLenia):
                 self.update_show_batch(1)
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
-            if event.key == pygame.K_b:
-                self.show_all = ~ self.show_all
 
-    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = DiffusionLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 
+
     def get_string_state(self):
-        return super().get_string_state()+f" total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
+        return f"R _total Mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
     
     def random_food_chan(self, num_spots=100, food_size=5, add_to_exisitng = False,  channels= []):
         """
@@ -225,66 +231,4 @@ class DiffusionLenia(MCLenia):
         if self.has_food:
             self.food_channel = self.random_food_chan() # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
-
-
-
-    @torch.no_grad()
-    def draw(self):
-        """
-            Draws the RGB worldmap from state.
-        """
-        # assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
-        if (not self.show_all) and (not self.show_all_override)  :
-            toshow = self.state[self.show_batch].clone()  # (C,H,W), pygame conversion done later
-
-            if (self.C == 1):
-                toshow = toshow.repeat(3, 1, 1)  # (3,H,W)
-            elif (self.C == 2):
-                toshow = torch.cat([toshow, torch.zeros_like(toshow)], dim=0)  # (3,H,W)
-            else:
-                toshow = toshow[:3, :, :]  # (3,H,W)
-
-            if self.has_food:
-                toshow[:, :, :] += self.food_channel[self.show_batch]  # (1,H,W)
-
-            if self.display_kernel == True:
-                kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
-                for i in range(kern.shape[0]):
-                    toshow[:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
-                        i
-                    ].cpu()
-
-            self._worldmap = torch.clamp(toshow, 0., 1.)
-
-        else:
-
-
-            mod_state = self.state.clone()
-            mod_state[:, :, :, 0:5] = 1
-            mod_state[:, :, :, -5:] = 1
-            mod_state[:, :, 0:5, :] = 1
-            mod_state[:, :, -5:, :] = 1
-
-            if self.display_kernel == True:
-                for j in range(self.batch):
-                    kern = self.compute_ker(batch=j)  # (C,3,k_size,k_size)
-                    for i in range(kern.shape[0]):
-                        mod_state[j,:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
-                            i
-                        ].cpu()
-
-
-
-            toshow = showtens.gridify(mod_state, max_width=self.size[1]*2, columns=int(math.sqrt(self.batch)))
-            if (self.C == 1):
-                toshow = toshow.repeat(3, 1, 1)  # (3,H,W)q
-            elif (self.C == 2):
-                toshow = torch.cat([toshow, torch.zeros_like(toshow)], dim=0)  # (3,H,W)
-            else:
-                toshow = toshow[:3, :, :]  # (3,H,W)
-
-            if self.has_food:
-                toshow[:, :, :] += showtens.gridify(self.food_channel, max_width=self.size[1]*2, columns= int(math.sqrt(self.batch)))  # (1,H,W)
-
-            self._worldmap = torch.clamp(toshow, 0., 1.)
 
