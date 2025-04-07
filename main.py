@@ -76,6 +76,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     }
     sW, sH = screen
 
+    Mr = 5
+    Mm = 5
+
     # Automaton world size
     W, H = world
     device = device
@@ -255,6 +258,27 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         index=2,
     )
 
+    mr_input = InputField(
+        screen=screen,
+        width=input_width,
+        height=input_height,
+        font=font,
+        label="Mutation Rate",
+        initial_value=Mr,
+        margin=margin,
+        index=3,
+    )
+    mm_input = InputField(
+        screen=screen,
+        width=input_width,
+        height=input_height,
+        font=font,
+        label="Mutation Magnitude",
+        initial_value=Mm,
+        margin=margin,
+        index=4,
+    )
+
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -328,6 +352,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                 w_input.resize(input_width, input_height, margin, font)
                 h_input.resize(input_width, input_height, margin, font)
                 fps_input.resize(input_width, input_height, margin, font)
+                mr_input.resize(input_width, input_height, margin, font)
+                mm_input.resize(input_width, input_height, margin, font)
 
                 # Update text blocks with new font
                 text_blocks = make_text_blocks(description, help_text, std_help, font, font_title)
@@ -373,6 +399,20 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                     if new_fps and new_fps > 0:
                         fps = new_fps
 
+                if mm_input.handle_event(event):
+                    new_mm = mm_input.get_value()
+                    if new_mm and new_mm > 0:
+                        Mm = new_mm
+                        auto.mm = Mm/100
+
+                if mr_input.handle_event(event):
+                    new_mr = mr_input.get_value()
+                    if new_mr and new_mr > 0:
+                        Mr = new_mr
+                        auto.mr = Mr/100
+
+
+
         if not stopped:
             auto.step()  # step the automaton
 
@@ -410,6 +450,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             w_input.draw()
             h_input.draw()
             fps_input.draw()
+            if hasattr(auto, "masses"):
+                mr_input.draw()
+                mm_input.draw()
 
         display_live_text(auto, font, screen)
 
