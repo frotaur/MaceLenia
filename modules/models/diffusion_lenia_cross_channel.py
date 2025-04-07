@@ -84,10 +84,10 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
 
         self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
 
-        min_aff = Aff.min()
-        max_aff = Aff.max()
-        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-6)
-        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True))
+        min_aff = Aff.min(dim=1, keepdim=True)[0]
+        max_aff = Aff.max(dim=1, keepdim=True)[0]
+        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-10)
+        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True) + 1e-10)
 
         target_cross_c_masses = self.state.sum(dim=1, keepdim=True) * Aff_c
         diff_target = self.state - target_cross_c_masses

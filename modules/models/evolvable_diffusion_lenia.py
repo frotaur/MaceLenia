@@ -66,6 +66,8 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
         self.split = self.batch//2
         self.show_all = False
         self.manual_evolution = False
+        self.mm = 0.05
+        self.mr = 0.05
 
 
 
@@ -95,7 +97,7 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
             parents = self.params[p_idxs]
             parent_mutation_params = {k:params[p_idxs] for k,params in self.mutation_params.items()}
             self.params, self.mutation_params = self.p2p_crossover(parents, parent_mutation_params ,self.split, self.split)
-            self.params[self.split:] = self.mutate(rate = 0.05, magnitude=0.05, params=self.params[self.split:])
+            self.params[self.split:] = self.mutate(rate = self.mr, magnitude=self.mm, params=self.params[self.split:])
             self.update_params(self.params, k_size_override=None)
             self.set_init_circle()
             #self.state = self.base_state.clone()
@@ -196,7 +198,7 @@ class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
 
             non_parent_ids = [i for i in range(self.batch) if i != quadrant_index]
 
-            self.params[non_parent_ids] = self.mutate(rate=0.1, magnitude=0.1, params=self.params[non_parent_ids], p_idxs=non_parent_ids)
+            self.params[non_parent_ids] = self.mutate(rate=self.mr, magnitude=self.mm, params=self.params[non_parent_ids], p_idxs=non_parent_ids)
             self.update_params(self.params, k_size_override=None)
             self.set_init_circle()
 
