@@ -83,7 +83,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     W, H = world
     device = device
 
-    fps = 60  # Visualization (target) frames per second
+    fps = 120  # Visualization (target) frames per second
     video_fps = 60  # Video frames per second
 
     text_size = int(sH / 45)
@@ -134,7 +134,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     def plot_growth(auto, figures):
         if not hasattr(auto, 'growth') or not callable(auto.growth):
             return
-        x = torch.linspace(0, 2, 100).to(device) # (100,)
+        x = torch.linspace(-0.5, 2.5, 100).to(device) # (100,)
 
         # Sample points from the growth function
         n_points = len(x)
@@ -161,7 +161,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         rgb_colors = [(180,10,10), (10,180,10), (10,10,180)]
         for idx, (fig, data) in enumerate(zip(figures, samples)):
             if len(figures) > 0:  # Make sure we have figures to plot to
-                fig.set_xlim((0, 2))
+                fig.set_xlim((-0.5, 2.5))
                 fig.set_ylim((-2, 2))
                 fig.chart_area.chart_margin = 0
 

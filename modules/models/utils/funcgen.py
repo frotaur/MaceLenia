@@ -19,6 +19,7 @@ class ArbitraryFunction(nn.Module):
         harmonics: Tensor = None,
         rescale: tuple = None,
         clips_min=None,
+        cut_off=False,
         device="cpu",
     ):
         """
@@ -33,6 +34,7 @@ class ArbitraryFunction(nn.Module):
                 i.e. [0,1,2,...,n_coeffs-1].
             rescale: tuple, (min,max). Will rescale the function values to this range
             clips_min: float, after rescaling will clip to this value
+            cut_off: bool, if True, will set the function to 0 outside the range defined by ranges
             device : torch device
         """
         super().__init__()
@@ -58,7 +60,7 @@ class ArbitraryFunction(nn.Module):
         if(isinstance(ranges, tuple)):
             ranges = torch.tensor([ranges[0], ranges[1]], device=device)[None, :].expand(self.func_num, -1)
 
-        self.ranges = ranges.to(self.device)
+        self.ranges = ranges.to(self.device) # (B,2)
         self.shifts = ranges[:, 0]  # (B,)
         self.period = ranges[:, 1] - ranges[:, 0]  # (B,)
 
@@ -71,22 +73,28 @@ class ArbitraryFunction(nn.Module):
         self.register_buffer("sin_coeffs", coefficients[:, :, 1].to(self.device))  # (B,num_harmonics)
         self.register_buffer("harmonics", harmonics.to(self.device))  # (B,num_harmonics)
 
+        self.cut_off= cut_off
+    
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Given x, evaluates the arbitrary function at the locations determined by x
 
         Args:
-            x : Tensor of shape (N,*). B must match self.func_num
+            x : Tensor of shape (N,...). N must match self.func_num
         """
         B, extra_dims = x.shape[0], x.shape[1:]
 
         assert x.shape[0] == self.func_num or x.shape[0] == 1, (
             "Dim 0 of input must match self.func_num of coefficients or be 1"
         )
+
         if x.shape[0] == 1:
-            x = x.expand(self.func_num, *extra_dims)  # (B,*)
+            x = x.expand(self.func_num, *extra_dims)  # (B,...)
+
+
         x = x.reshape(self.func_num, 1, -1)  # (B,1,*)
+
 
         func_interior = (
             2 * torch.pi/self.period[:, None, None]
@@ -104,9 +112,14 @@ class ArbitraryFunction(nn.Module):
 
             values = (values - min_vals) / (max_vals - min_vals + 1e-8)  # (B,*)
             values = values * (self.rescale_range[1] - self.rescale_range[0]) + self.rescale_range[0]
+        
         if self.clips_min is not None:
-            values[values < self.clips_min] = 0.0
+            values[values < self.clips_min] = self.clips_min
 
+        if(self.cut_off):    
+            x_out = (x[:,0]<self.ranges[:, 0][:,None]) | (x[:,0]>self.ranges[:, 1][:, None]) # (N,*) true if out of range
+            values[x_out] = 0.0 # (B,*) set to 0 if out of range
+        
         # Restore initial shape
         values = values.reshape(self.func_num, *extra_dims)
 

@@ -5,7 +5,7 @@ from numpy.ma.core import minimum
 import showtens
 from .lenia import MCLenia
 import random
-import math
+import math, time
 
 class DiffusionLenia(MCLenia):
     """
@@ -46,7 +46,7 @@ class DiffusionLenia(MCLenia):
             save_dir=save_dir,
         )
 
-        self._temp = 1
+        self._temp = 8
         self.Aff = self.compute_affinity()
         self.show_batch = 0
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
@@ -59,17 +59,17 @@ class DiffusionLenia(MCLenia):
         """
         Steps the alife model by one time step
         """
-        """B,C,H,W = self.state.shape
-        Aff = self.compute_affinity()
+        # B,C,H,W = self.state.shape
+        # Aff = self.compute_affinity()
     
-        Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
-        Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
+        # Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        # Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+        # Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
 
-        state_portions = self.state/Z
-        state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
-        self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
+        # state_portions = self.state/Z
+        # state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        # state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
+        # self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
         B, C, H, W = self.state.shape
 
         Aff = self.compute_affinity(sense_food=sense_food)
@@ -84,7 +84,6 @@ class DiffusionLenia(MCLenia):
         self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
 
         if self.has_food:
-
             alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0002))
             self.state = (self.state  - alowable_decay)
 
@@ -170,7 +169,7 @@ class DiffusionLenia(MCLenia):
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
             if event.key == pygame.K_b:
-                self.show_all = ~ self.show_all
+                self.show_all = not self.show_all
 
     process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
@@ -256,9 +255,20 @@ class DiffusionLenia(MCLenia):
 
             self._worldmap = torch.clamp(toshow, 0., 1.)
 
+
+            # display grayscale where the kernel is big
+            # conv = self.kernel_fftconv(self.state)  # (B,C,C,H,W)
+            # whitepix = torch.any(torch.any((conv[0] > 2.0),dim=0),dim=0)  # (H,W)
+            # self._worldmap[:,whitepix] = 0.4  # (3,H,W)
+            # superwhite = torch.any(torch.any((conv[0] > 3.0),dim=0),dim=0)  # (H,W)
+            # self._worldmap[:,superwhite] = 0.6
+            # supersuperwhite = torch.any(torch.any((conv[0] > 4.0),dim=0),dim=0)  # (H,W)
+            # self._worldmap[:,supersuperwhite] = 0.8
+            # superduperwhite = torch.any(torch.any((conv[0] > 5.0),dim=0),dim=0)  # (H,W)
+            # self._worldmap[:,superduperwhite] = 1.0
+
+
         else:
-
-
             mod_state = self.state.clone()
             mod_state[:, :, :, 0:5] = 1
             mod_state[:, :, :, -5:] = 1

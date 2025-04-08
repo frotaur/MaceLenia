@@ -270,7 +270,7 @@ class BatchParams:
         new_params = {}
         for key in keys:
             if key not in frozen_keys and isinstance(self.param_dict[key], torch.Tensor):
-                tentative = self.param_dict[key] * (1 + magnitude * torch.randn_like(self.param_dict[key]))
+                tentative = self.param_dict[key] * (1 + magnitude * torch.randn_like(self.param_dict[key],dtype=torch.float32))
 
                 new_params[key] = torch.where(
                     torch.rand_like(tentative) < rate, tentative, self.param_dict[key]
@@ -368,11 +368,9 @@ class LeniaParams(BatchParams):
             Mixed generation between arbitrary and standard Lenia parameters.
             With k_arbi and g_arbi set to False, it is the same as random_gen.
         """
-        params = {
-            "k_size": k_size,
-            "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
-            * (1 - 0.7 * torch.diag(torch.ones(num_channels, device=device))),
-        }
+        params = LeniaParams._universal_params(
+            batch_size=batch_size, num_channels=num_channels, k_size=k_size, device=device)
+        
         from_random_gen = LeniaParams.random_gen(
             batch_size=batch_size, num_channels=num_channels, k_size=k_size, device=device
         ).param_dict
@@ -395,6 +393,7 @@ class LeniaParams(BatchParams):
             params["mu_k"] = from_random_gen["mu_k"]
             params["sigma_k"] = from_random_gen["sigma_k"]
             params["beta"] = from_random_gen["beta"]
+        
         if g_arbi:
             g_arbi = ArbitraryFunction.random_arbi(
                 func_num=batch_size * num_channels * num_channels,
@@ -424,7 +423,9 @@ class LeniaParams(BatchParams):
         g_arbi=False,
         k_size=None,
         k_decay=1.0,
+        k_harmo_start=1.0,
         g_decay=1.0,
+        g_harmo_start=1.0,
         k_coeffs=6,
         k_rescale=(-0.3, 1.0),
         g_coeffs=4,
@@ -442,46 +443,27 @@ class LeniaParams(BatchParams):
         Returns:
             dict of batched parameters
         """
-        params = {
-            "k_size": k_size,
-            "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
-            * (1 - 0.7 * torch.diag(torch.ones(num_channels, device=device))),
-        }
+        params = LeniaParams._universal_params(
+            batch_size=batch_size, num_channels=num_channels, k_size=k_size, device=device)
+        
         from_random_gen = LeniaParams.random_gen(
             batch_size=batch_size, num_channels=num_channels, k_size=k_size, device=device
         ).param_dict
 
         if k_arbi:
-            k_coefficients = torch.randn((batch_size, num_channels, num_channels, k_coeffs,2), device=device)
-            dampening = torch.exp(
-                -k_decay*torch.arange(0, k_coeffs, device=device).float())[None,None,None,:,None] # (1,1,1,k_coeffs,1)
-            k_coefficients = k_coefficients * dampening
-            
-            k_coefficients = k_coefficients.reshape((batch_size*num_channels*num_channels, k_coeffs * 2))
-            k_arbi = ArbitraryFunction(coefficients=k_coefficients, ranges=(0.0, 1.0), rescale=k_rescale, clips_min=0.,device=device)
-            params["k_coeffs"] = k_arbi.coefficients.reshape(
-                batch_size, num_channels, num_channels, k_coeffs * 2)
-            
-            params["k_harmonics"] = k_arbi.harmonics.reshape(batch_size,num_channels,num_channels, k_coeffs)
-            params["k_rescale"] = k_rescale
+            from_exp_gen = LeniaParams._exp_decay(batch_size=batch_size,num_channels=num_channels,decay=k_decay,harmo_start=k_harmo_start,n_coeffs=k_coeffs,ranges=(0.0, 1.0),rescale=k_rescale,clip=0.,device=device)
+
+            for key,value in from_exp_gen.items():
+                params['k_'+key] = value
         else:
-            params["mu_k"] = from_random_gen["mu_k"]
-            params["sigma_k"] = from_random_gen["sigma_k"]
-            params["beta"] = from_random_gen["beta"]
+            for key in ['mu_k','sigma_k','beta']:
+                params[key] = from_random_gen[key]
         
         if g_arbi:
-            g_coefficients = torch.randn((batch_size, num_channels, num_channels, g_coeffs,2), device=device)
-            g_coefficients *= torch.exp(
-                -g_decay*torch.arange(0, g_coeffs, device=device).float())[None,None,None,:,None]
-            g_coefficients = g_coefficients.reshape((batch_size*num_channels*num_channels, g_coeffs * 2))
-            
-            g_arbi = ArbitraryFunction(coefficients=g_coefficients, ranges=(0.0, 2.0), rescale=g_rescale, clips_min=g_clip,device=device)
-            params["g_coeffs"] = g_arbi.coefficients.reshape(
-                batch_size, num_channels, num_channels, 2 * g_coeffs
-            )
-            params["g_harmonics"] = g_arbi.harmonics.reshape(batch_size, num_channels, num_channels, g_coeffs)
-            params["g_rescale"] = g_rescale
-            params["g_clip"] = g_clip
+            from_exp_gen = LeniaParams._exp_decay(batch_size=batch_size,num_channels=num_channels,decay=g_decay,harmo_start=g_harmo_start,n_coeffs=g_coeffs,ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
+
+            for key,value in from_exp_gen.items():
+                params['g_'+key] = value
         else:
             params["mu"] = from_random_gen["mu"]
             params["sigma"] = from_random_gen["sigma"]
@@ -523,34 +505,6 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
     
     @staticmethod
-    def arbi_gen(batch_size, num_channels = 3, k_size=None, k_harmonics=3, g_harmonics=3, g_bounds=(-2,2), device='cpu'):
-        """
-            Generates growth and kernel parameters with arbitrary functions, randomly.
-            TODO : Make it better, potentially make many versions of this function
-            Args:
-                batch_size : number of parameters to generate
-                num_channels : number of channels in the automaton
-                k_size : size of the kernel
-                k_harmonics : number of harmonics for the kernel
-                g_harmonics : number of harmonics for the growth
-                g_bounds : tuple, bounds for the growth function
-                device : device on which to generate the parameters
-        """
-        k_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=k_harmonics) # Generate random
-        g_arbi = ArbitraryFunction(func_num = batch_size*num_channels*num_channels, num_harmonics=g_harmonics,bounds_range=g_bounds) # Generate random
-        
-        params ={
-                'k_size' : k_size,
-                'k_coeffs' : k_arbi.coefficients.reshape(batch_size,num_channels,num_channels,k_harmonics),
-                'k_harmonics' : k_arbi.harmonics.reshape(batch_size,num_channels,num_channels,k_harmonics),
-                'g_coeffs' : g_arbi.coefficients.reshape(batch_size,num_channels,num_channels,g_harmonics),
-                'g_harmonics' : g_arbi.harmonics.reshape(batch_size,num_channels,num_channels,g_harmonics),
-                'weights' : torch.rand(batch_size,num_channels,num_channels,device=device)*(1-0.8*torch.diag(torch.ones(num_channels,device=device)))
-                }
-    
-        return LeniaParams(params,device=device)
-
-    @staticmethod
     def random_gen(batch_size, num_channels=3, k_size=None, device="cpu"):
         """
         Full random generation for standard Lenia Parameters. Weights are biased towards
@@ -583,6 +537,62 @@ class LeniaParams(BatchParams):
             "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
             * (1 - 0.8 * torch.diag(torch.ones(num_channels, device=device))),
         }
+
+        return LeniaParams(params, device=device)
+ 
+    @staticmethod
+    def fourier_range_gen(batch_size,
+        num_channels=3,
+        k_size=None,
+        k_arbi=True,
+        g_arbi=False,
+        k_harmonics:torch.Tensor=torch.tensor([2,3,4]),
+        k_rescale=(-0.3, 1.0),
+        g_harmonics:torch.Tensor=torch.tensor([1,2]),
+        g_rescale=(-1.0, 1.0),
+        g_clip=None,
+        device="cpu",
+    ):
+        """
+        Generates parameters with Fourier range.
+
+        Args:
+            batch_size : number of parameters to generate
+            device : device on which to generate the parameters
+
+        Returns:
+            dict of batched parameters
+        """
+        params = {
+            "k_size": k_size,
+            "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
+            * (1 - 0.7 * torch.diag(torch.ones(num_channels, device=device))),
+        }
+
+        from_random_gen = LeniaParams.random_gen(
+            batch_size=batch_size, num_channels=num_channels, k_size=k_size, device=device
+        ).param_dict
+
+        if k_arbi:
+            from_fourier = LeniaParams._fourier_range(batch_size=batch_size,num_channels=num_channels,harmonics=k_harmonics,ranges=(0.0, 1.0),rescale=k_rescale,device=device)
+            params["k_coeffs"] = from_fourier["coeffs"]
+            params["k_harmonics"] = from_fourier["harmonics"]
+            params["k_rescale"] = from_fourier["rescale"]
+            params["k_clip"] = from_fourier["clip"]
+        else:
+            params["mu_k"] = from_random_gen["mu_k"]
+            params["sigma_k"] = from_random_gen["sigma_k"]
+            params["beta"] = from_random_gen["beta"]
+        
+        if g_arbi:
+            from_fourier = LeniaParams._fourier_range(batch_size=batch_size,num_channels=num_channels,harmonics=g_harmonics,ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
+            params["g_coeffs"] = from_fourier["coeffs"]
+            params["g_harmonics"] = from_fourier["harmonics"]
+            params["g_rescale"] = from_fourier["rescale"]
+            params["g_clip"] = from_fourier["clip"]
+        else:
+            params["mu"] = from_random_gen["mu"]
+            params["sigma"] = from_random_gen["sigma"]
 
         return LeniaParams(params, device=device)
 
@@ -666,6 +676,88 @@ class LeniaParams(BatchParams):
 
         return LeniaParams(params, device=device)
 
+    #========== BELOW, UTILITY FUNCTIONS FOR GENERATING ARBI PARAMETERS ==========
+    @staticmethod
+    def _fourier_range(batch_size, num_channels, harmonics:torch.Tensor, ranges, rescale=None, clip=None,device='cpu'):
+        """
+            Generate arbitrary function with Fourier range.
+            Args:
+                batch_size : number of parameters to generate
+                num_channels : number of channels in the automaton
+                harmonics :(num_harmonics,) integers harmonics to be used
+                ranges : tuple, x-range for the functions
+                rescale : tuple, (min,max) range of the x values for the function to be rescaled to
+                clips_min : float, after rescaling will clip to this value
+                device : device on which to generate the parameters
+            
+            Returns:
+                dict of batched parameters, keys ('coeffs', 'harmonics', 'rescale', 'clip', 'ranges')
+        """
+        num_harmonics = len(harmonics)
+        harmonics = torch.tensor(harmonics, device=device)[None,None,None,:].expand(batch_size,num_channels,num_channels,num_harmonics) # (batch_size*num_channels*num_channels,num_harmonics*2)
+        coeffs = torch.randn((batch_size,num_channels,num_channels,num_harmonics*2), device=device) # (batch_size*num_channels*num_channels,num_harmonics*2)
+
+        return {
+                "coeffs": coeffs,
+                "harmonics": harmonics,
+                "rescale": rescale,
+                "clip": clip,
+                "ranges": ranges,
+                }
+
+    @staticmethod
+    def _exp_decay(batch_size, num_channels, decay, n_coeffs, ranges, harmo_start=0, rescale=None, clip=None, device='cpu'):
+        """
+            Generate arbitrary function with exponential decay.
+            Args:
+                batch_size : number of parameters to generate
+                num_channels : number of channels in the automaton
+                decay : float, decay rate for the exponential function
+                n_coeffs : int, number of coefficients for the function
+                ranges : tuple, x-range for the functions
+                harmo_start : int, start value for the coefficients
+                rescale : tuple, (min,max) range of the x values for the function to be rescaled to
+                clips_min : float, after rescaling will clip to this value
+                device : device on which to generate the parameters
+            
+            Returns:
+                dict of batched parameters, keys ('coeffs', 'harmonics', 'rescale', 'clip', 'ranges')
+        """
+        coeffs = torch.randn((batch_size, num_channels, num_channels, n_coeffs,2), device=device)
+        dampening = torch.exp(
+            -decay*torch.arange(0, n_coeffs, device=device).float())[None,None,None,:,None] # (1,1,1,k_coeffs,1)
+        coeffs = coeffs * dampening
+        coeffs = coeffs.reshape((batch_size,num_channels,num_channels, n_coeffs * 2))
+        harmonics = torch.arange(harmo_start, harmo_start+n_coeffs, device=device)[None,:].expand(batch_size*num_channels*num_channels,n_coeffs)
+        harmonics = harmonics.reshape(batch_size,num_channels,num_channels,n_coeffs)
+
+        params ={
+            "coeffs": coeffs,
+            "harmonics": harmonics,
+            "rescale": rescale,
+            "clip": clip,
+            "ranges": ranges,
+        }
+
+        return params
+
+    @staticmethod
+    def _universal_params(batch_size, num_channels, k_size=31, diag_inhibition=0.8, device='cpu' ):
+        """
+            Return bare minimum k_size and weights dictionary for the model.
+
+            Args:
+                batch_size : number of parameters to generate
+                num_channels : number of channels in the automaton
+                k_size : int, size of the kernel
+                diag_inhibition : float, value of the diagonal inhibition
+                device : device on which to generate the parameters
+        """
+        return {
+            "k_size": k_size,
+            "weights": torch.rand(batch_size, num_channels, num_channels, device=device)
+            * (1 - diag_inhibition * torch.diag(torch.ones(num_channels, device=device))),
+        }
 
 if __name__ == "__main__":
     test = LeniaParams(batch_size=1, k_size=21)

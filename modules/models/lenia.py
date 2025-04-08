@@ -62,7 +62,7 @@ class MCLenia(DevModule, Automaton):
 
         if params is None:
             # Generates random parameters
-            self.params = LeniaParams(batch_size=self.batch, k_size=25, channels=self.C, device=device)
+            self.params = LeniaParams(batch_size=self.batch, k_size=31, channels=self.C, device=device)
         elif isinstance(params, dict):
             self.params = LeniaParams(param_dict=params, device=device)
         else:
@@ -107,7 +107,7 @@ class MCLenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
-
+        self.cutoff = False  # For the arbitrary function, if we want to cut off the function outside the range
 
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
@@ -338,6 +338,7 @@ class MCLenia(DevModule, Automaton):
                 ranges=ranges,
                 rescale=self.params["g_rescale"],
                 clips_min=self.params["g_clip"],
+                cut_off=self.cutoff,
                 device=self.device,
             )
 
@@ -446,11 +447,11 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_n:
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     params = LeniaParams.random_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size
                     )
                 else:
                     params = LeniaParams.default_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size
                     )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
@@ -458,11 +459,12 @@ class MCLenia(DevModule, Automaton):
                     batch_size=self.batch,
                     num_channels=self.C,
                     device=self.device,
-                    k_size=31,
+                    k_size=self.k_size,
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
                     k_coeffs=6,
-                    g_coeffs=3
+                    g_coeffs=3,
+                    g_clip=-0.5
                 )
                 self.update_params(params, k_size_override=None)
 
@@ -512,21 +514,34 @@ class MCLenia(DevModule, Automaton):
                 self.state = torch.zeros_like(self.state)
             if event.key == pygame.K_t:
                 # Modify it when testing
-                params = LeniaParams.exp_decay_gen(
-                    batch_size=self.batch, 
-                    num_channels=self.C, 
-                    device=self.device, 
-                    k_size=31,
-                    k_arbi=self.k_arbi,
-                    g_arbi=self.g_arbi,
-                    k_decay=2.,
-                    g_decay=2.,
-                    k_coeffs=6,
-                    k_rescale=(-0.3,1.),
-                    g_coeffs=4,
-                    )
-                self.update_params(params, k_size_override=None)
-                    
+                
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.cutoff=not self.cutoff
+                    self.growth = self.compute_growth()  # growth function, callable
+                else:
+                    params = LeniaParams.exp_decay_gen(
+                        batch_size=self.batch, 
+                        num_channels=self.C, 
+                        device=self.device, 
+                        k_size=31,
+                        k_arbi=self.k_arbi,
+                        g_arbi=self.g_arbi,
+                        k_decay=.5,
+                        k_harmo_start=1,
+                        g_decay=.1,
+                        g_harmo_start=1,
+                        k_coeffs=5,
+                        k_rescale=(-0.7,1.),
+                        g_coeffs=3,
+                        g_clip=-0.3,
+                        )
+                    self.update_params(params, k_size_override=None)           
+
+                # else:
+                #     params = LeniaParams.fourier_range_gen(batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31,
+                #                                         k_arbi=self.k_arbi, g_arbi=self.g_arbi, k_harmonics=torch.tensor([1.5,2.]),
+                #                                         k_rescale=(-1,.8),g_harmonics=torch.tensor([1.,2.,3.,4.,5.,6.]), g_rescale=(-1.,1.),g_clip=-0.3)
+                    # self.update_params(params, k_size_override=None)           
 
     def compute_ker(self, batch=0):
         """

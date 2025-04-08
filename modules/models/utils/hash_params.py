@@ -76,6 +76,8 @@ def params_to_words(state_dict: Dict[str, torch.Tensor], num_words: int = 2) -> 
     param_bytes = b''
     for key in sorted(state_dict.keys()):  # Sort keys for deterministic ordering
         if not(isinstance(state_dict[key],torch.Tensor)):
+            if(state_dict[key] is None):
+                tohash = torch.tensor(-424242., dtype=torch.float32) # dummy value for None
             tohash = torch.tensor(state_dict[key])
         else:
             tohash = state_dict[key]
