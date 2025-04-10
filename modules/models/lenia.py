@@ -69,6 +69,8 @@ class MCLenia(DevModule, Automaton):
             self.params = params
 
         self.k_size = self.params["k_size"]  # kernel size
+        self.k_mult = self.params.param_dict.get('k_mult', 1)  # number of kernels (same for all)
+
         self.register_buffer("state", torch.rand((self.batch, self.C, self.h, self.w)))
 
         if state_init is None:
@@ -125,6 +127,7 @@ class MCLenia(DevModule, Automaton):
         self.sigma_k = params.get("sigma_k", self.sigma_k)
         self.weights = params.get("weights", self.weights)
         self.k_size = params.get("k_size", self.k_size)  # kernel sizes (same for all)
+        self.k_mult = params.get("k_mult", self.k_mult)  # number of kernels (same for all)
 
         if k_size_override is not None:
             self.k_size = k_size_override
@@ -139,7 +142,7 @@ class MCLenia(DevModule, Automaton):
 
         self.params = LeniaParams(param_dict=params, device=self.device)
 
-        self.batch = self.mu.shape[0]  # update batch size
+        self.batch = self.params.batch_size
 
 
         if(self.k_arbi and not 'k_harmonics' in self.params):
@@ -239,7 +242,7 @@ class MCLenia(DevModule, Automaton):
         # Expand radius to match expected kernel shape
         r = r[None, None, None, None]  # (1,1, 1, 1, k_size, k_size)
         r = r.expand(
-            self.batch, self.C, self.C, self.mu_k.shape[3], -1, -1
+            self.batch, self.C*self.k_mult, self.C, self.mu_k.shape[3], -1, -1
         )  # (B,C,C,#of rings,k_size,k_size)
 
         mu_k = self.mu_k[..., None, None]  # (B,C,C,#of rings,1,1)
@@ -268,13 +271,13 @@ class MCLenia(DevModule, Automaton):
         if self.k_arbi:
             assert 'k_coeffs' in self.params.param_dict, "k_coeffs not in params"
             harmonics = self.params["k_harmonics"].reshape(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )  # (B*C*C,# of harmonics)
             coeffs = self.params["k_coeffs"].reshape(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )  # (B*C*C,# of harmonics)
             ranges = torch.tensor([0.0, 1.0], device=self.device)[None, :].expand(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )
             arbi = ArbitraryFunction(
                 coefficients=coeffs,
@@ -284,11 +287,11 @@ class MCLenia(DevModule, Automaton):
                 clips_min=0.0,
                 device=self.device,
             )
-            K = arbi(r[None].expand(self.batch * self.C * self.C, -1, -1))  # (BCC,k_size,k_size)
-            K = K.reshape(self.batch, self.C, self.C, self.k_size, self.k_size)
+            K = arbi(r[None].expand(self.batch * self.C * self.C * self.k_mult, -1, -1))  # (BCC,k_size,k_size)
+            K = K.reshape(self.batch, self.C * self.k_mult, self.C, self.k_size, self.k_size)
             K = create_smooth_circular_mask(K, self.k_size // 2)
         else:
-            K = self.kernel_slice(r)  # (B,C,C,k_size,k_size)
+            K = self.kernel_slice(r)  # (B,C*k_mult,C,k_size,k_size)
 
         # Normalize the kernel, s.t. integral(K) = 1
         summed = torch.sum(K, dim=(-1, -2), keepdim=True)  # (B,C,C,1,1)
@@ -302,14 +305,14 @@ class MCLenia(DevModule, Automaton):
     def kernel_to_fft(self, K):
         # Pad kernel to match image size
         # For some reason, pad is left;right, top;bottom, (so W,H)
-        K = F.pad(K, [0, (self.w - self.k_size)] + [0, (self.h - self.k_size)])  # (B,C,C,h,w)
+        K = F.pad(K, [0, (self.w - self.k_size)] + [0, (self.h - self.k_size)])  # (B,C*k_mult,C,h,w)
 
         # Center the kernel on the top left corner for fft
-        K = K.roll((-(self.k_size // 2), -(self.k_size // 2)), dims=(-1, -2))  # (B,C,C,h,w)
+        K = K.roll((-(self.k_size // 2), -(self.k_size // 2)), dims=(-1, -2))  # (B,C*k_mult,C,h,w)
 
-        K = torch.fft.fft2(K)  # (B,C,C,h,w)
+        K = torch.fft.fft2(K)  # (B,C*k_mult,C,h,w)
 
-        return K  # (B,C,C,h,w)
+        return K  # (B,C*k_mult,C,h,w)
 
     def compute_growth(self):
         """
@@ -321,13 +324,13 @@ class MCLenia(DevModule, Automaton):
             assert 'g_coeffs' in self.params.param_dict, "g_coeffs not in params, but g_arbi is True"
             # Use ArbitraryFunction
             coeffs = self.params["g_coeffs"].reshape(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )  # (B*C*C,# of harmonics)
             harmonics = self.params["g_harmonics"].reshape(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )  # (B*C*C,# of harmonics)
             ranges = torch.tensor([0.0, 2.0], device=self.device)[None, :].expand(
-                self.batch * self.C * self.C, -1
+                self.batch * self.C * self.k_mult * self.C, -1
             )
 
             arbi = ArbitraryFunction(
@@ -340,16 +343,16 @@ class MCLenia(DevModule, Automaton):
             )
 
             def growth(u):
-                B, C, C, H, W = u.shape
-                u = u.reshape(B * C * C, H, W)
+                B, Ck, C, H, W = u.shape
+                u = u.reshape(B * Ck * C, H, W)
                 out = arbi(u)
-                return out.reshape(B, C, C, H, W)
+                return out.reshape(B, Ck, C, H, W)
 
             return growth
 
         else:
-            mu = self.mu[..., None, None]  # (B,C,C,1,1)
-            sigma = self.sigma[..., None, None]  # (B,C,C,1,1)
+            mu = self.mu[..., None, None]  # (B,C*k_mult,C,1,1)
+            sigma = self.sigma[..., None, None]  # (B,C*k_mult,C,1,1)
 
             def growth(u):
                 mu_exp = mu.expand(-1, -1, -1, u.shape[-2], u.shape[-1])  # (B,C,C,H,W)
@@ -364,17 +367,17 @@ class MCLenia(DevModule, Automaton):
         Steps the automaton state by one iteration.
         """
 
-        U = self.kernel_fftconv(self.state)  # (B,C,C,H,W)
+        U = self.kernel_fftconv(self.state)  # (B,C*k_mult,C,H,W)
 
         assert (self.h, self.w) == (U.shape[-2], U.shape[-1])
 
-        weights = self.weights[..., None, None]  # (B,C,C,1,1)
-        weights = weights.expand(-1, -1, -1, self.h, self.w)  # (B,C,C,H,W)
+        weights = self.weights[..., None, None]  # (B,C*k_mult,C,1,1)
+        weights = weights.expand(-1, -1, -1, self.h, self.w)  # (B,C*k_mult,C,H,W)
 
         # Weight normalized growth :
         dx = (self.growth(U) * weights).sum(
             dim=1
-        )  # (B,C,H,W) # G(U)[:,i,j] is contribution of channel i to channel j
+        )  # (B,C*k_mult,H,W) # G(U)[:,i,j] is contribution of channel i to channel j
 
         # Apply growth and clamp
         self.state = torch.clamp(self.state + self.dt * dx, 0, 1)  # (B,C,H,W)
@@ -384,9 +387,12 @@ class MCLenia(DevModule, Automaton):
         Compute convolution using fft_kernel
         """
         state = torch.fft.fft2(state)  # (B,C,H,W) fourier transform
-        state = state[:, :, None]  # (B,1,C,H,W)
-        state = state * self.fft_kernel  # (B,C,C,H,W), convoluted
-        state = torch.fft.ifft2(state)  # (B,C,C,H,W), back to spatial domain
+        state = state[:, :, None, None, :]  # (B,C,1,1,H,W)
+        print('Selfc : ', self.C, 'kern shape : ', self.fft_kernel.shape)
+        fft_unfolded = self.fft_kernel.reshape(self.batch, self.C, self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,h,w)
+        state = state * fft_unfolded  # (B,C,k_mult,C,H,W), convoluted
+        state = state.reshape(self.batch, self.C * self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,H,W)
+        state = torch.fft.ifft2(state)  # (B,C*k_mult,C,H,W), back to spatial domain
 
         return torch.real(state)
 
@@ -443,11 +449,13 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_n:
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     params = LeniaParams.random_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size,
+                        k_mult=self.k_mult
                     )
                 else:
                     params = LeniaParams.default_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size
+                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size,
+                        k_mult=self.k_mult
                     )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
@@ -456,6 +464,7 @@ class MCLenia(DevModule, Automaton):
                     num_channels=self.C,
                     device=self.device,
                     k_size=self.k_size,
+                    k_mult=self.k_mult,
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
                     k_coeffs=4,
@@ -478,15 +487,17 @@ class MCLenia(DevModule, Automaton):
                     self.set_init_perlin(wavelength=sq_size)
                 else:
                     self.set_init_perlin()
+            if event.key == pygame.K_o:
+                self.set_init_circle()
+
             if event.key == pygame.K_w:
                 # Reroll growth/kernel
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
                     self.params.reroll_params(kernel=False, arbi=self.g_arbi)
                 else:
                     self.params.reroll_params(kernel=True, arbi=self.k_arbi)
+                    # print('Rerolled noob, new C : ', self.params.num_channels)
                 self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
-            if event.key == pygame.K_o:
-                self.set_init_circle()
 
             if event.key == pygame.K_y:
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
@@ -518,26 +529,45 @@ class MCLenia(DevModule, Automaton):
                 self.state = torch.zeros_like(self.state)
             if event.key == pygame.K_t:
                 # Modify it when testing
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                    self.growth = self.compute_growth()  # growth function, callable
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                    self.k_mult -= 1
+                    if(self.k_mult < 1):
+                        self.k_mult = 1
                 else:
-                    params = LeniaParams.exp_decay_gen(
-                        batch_size=self.batch, 
-                        num_channels=self.C, 
-                        device=self.device, 
-                        k_size=31,
-                        k_arbi=self.k_arbi,
-                        g_arbi=self.g_arbi,
-                        k_decay=.5,
-                        k_harmo_start=1,
-                        g_decay=.1,
-                        g_harmo_start=1,
-                        k_coeffs=5,
-                        k_rescale=(-0.7,1.),
-                        g_coeffs=3,
-                        g_clip=-0.3,
-                        )
-                    self.update_params(params, k_size_override=None)           
+                    self.k_mult += 1
+                params = LeniaParams.mixed_gen(
+                    batch_size=self.batch,
+                    num_channels=self.C,
+                    device=self.device,
+                    k_size=self.k_size,
+                    k_mult=self.k_mult,
+                    k_arbi=self.k_arbi,
+                    g_arbi=self.g_arbi,
+                    k_coeffs=4,
+                    g_coeffs=3,
+                    g_clip=-0.5
+                )
+                self.update_params(params, k_size_override=None)
+                # if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                #     self.growth = self.compute_growth()  # growth function, callable
+                # else:
+                #     params = LeniaParams.exp_decay_gen(
+                #         batch_size=self.batch, 
+                #         num_channels=self.C, 
+                #         device=self.device, 
+                #         k_size=31,
+                #         k_arbi=self.k_arbi,
+                #         g_arbi=self.g_arbi,
+                #         k_decay=.5,
+                #         k_harmo_start=1,
+                #         g_decay=.1,
+                #         g_harmo_start=1,
+                #         k_coeffs=5,
+                #         k_rescale=(-0.7,1.),
+                #         g_coeffs=3,
+                #         g_clip=-0.3,
+                #         )
+                #     self.update_params(params, k_size_override=None)           
 
                 # else:
                 #     params = LeniaParams.fourier_range_gen(batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31,
@@ -555,7 +585,7 @@ class MCLenia(DevModule, Automaton):
         kern = self.k[batch].detach()  # (C,C, k_size, k_size), removed batch
 
         if kern.shape[1] == 1:
-            kern = kern.expand(1, 3, -1, -1)
+            kern = kern.expand(-1, 3, -1, -1)
         elif kern.shape[1] > 3:
             kern = kern[:3, :3]  # Cut, and include only the first 3 set of kernels
 

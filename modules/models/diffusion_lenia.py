@@ -181,7 +181,7 @@ class DiffusionLenia(MCLenia):
             add_mask = (self.X-x)**2 + (self.Y-y)**2 < add_rad**2  # (H,W)
 
             if(mouse_state.left):
-                addition = torch.rand((self.batch, 3, self.h, self.w), device=self.device)
+                addition = torch.rand((self.batch, self.C, self.h, self.w), device=self.device)
                 self.state[:,:, add_mask] += 0.05*addition[:, :, add_mask]
             elif(mouse_state.right):
                 self.state[:,:, add_mask] -= 0.05
@@ -296,7 +296,7 @@ class DiffusionLenia(MCLenia):
             if self.display_kernel == True:
                 for j in range(self.batch):
                     kern = self.compute_ker(batch=j)  # (C,3,k_size,k_size)
-                    for i in range(kern.shape[0]):
+                    for i in range(kern.shape[0]): # TODO : bugs out if num_channels =1 
                         mod_state[j,:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
                             i
                         ].cpu()

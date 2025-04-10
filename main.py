@@ -29,7 +29,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         "DiffusionLenia": lambda h, w: DiffusionLenia(
             (1, h, w),
             dt=0.1,
-            num_channels=3,
+            num_channels=1,
             device=device,
             has_food=False,
             save_dir="saved_diff_lenia",
@@ -143,9 +143,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         
         # For each channel pair, sample the growth function
         C = auto.C if hasattr(auto, 'C') else 3
-        
+        k_mult = auto.k_mult if hasattr(auto, 'k_mult') else 1
         x_expanded = x.reshape(1,1,1,n_points,1) # (B, 1, 1, n_points, 1)
-        x_expanded = x_expanded.expand(1, C, C, n_points, 1) # (B, C, C, n_points, 1)
+        x_expanded = x_expanded.expand(1, C*k_mult, C, n_points, 1) # (B, C, C, n_points, 1)
         growth_results  = auto.growth(x_expanded) # (B, C, C, n_points, 1)
         if(hasattr(auto, 'show_batch')):
             growth_show = auto.show_batch
