@@ -53,6 +53,9 @@ class DiffusionLenia(MCLenia):
         self.show_all = False
         self.show_all_override = False
 
+
+
+
         
 
     def step(self, sense_food = False):
@@ -170,6 +173,21 @@ class DiffusionLenia(MCLenia):
                 self.update_show_batch(-1)
             if event.key == pygame.K_b:
                 self.show_all = not self.show_all
+
+        mouse_state = self.get_mouse_state(camera)
+        if(mouse_state.left or mouse_state.right):
+            add_rad = self.k_size/2.
+            x, y = mouse_state.x, mouse_state.y
+            add_mask = (self.X-x)**2 + (self.Y-y)**2 < add_rad**2  # (H,W)
+
+            if(mouse_state.left):
+                addition = torch.rand((self.batch, 3, self.h, self.w), device=self.device)
+                self.state[:,:, add_mask] += 0.05*addition[:, :, add_mask]
+            elif(mouse_state.right):
+                self.state[:,:, add_mask] -= 0.05
+                self.state[:,:, add_mask] = torch.clamp(self.state[:,:, add_mask], 0., 1.)
+
+
 
     process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
