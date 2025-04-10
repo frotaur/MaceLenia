@@ -264,12 +264,8 @@ class DiffusionLenia(MCLenia):
             if self.has_food:
                 toshow[:, :, :] += self.food_channel[self.show_batch]  # (1,H,W)
 
-            if self.display_kernel == True:
-                kern = self.compute_ker(batch=self.show_batch)  # (C,3,k_size,k_size)
-                for i in range(kern.shape[0]):
-                    toshow[:, self.h - self.k_size: self.h, i * self.k_size: (i + 1) * self.k_size] = kern[
-                        i
-                    ].cpu()
+            if self.display_kernel:
+                toshow = self._draw_kernel(toshow)
 
             self._worldmap = torch.clamp(toshow, 0., 1.)
 

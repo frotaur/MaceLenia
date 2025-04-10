@@ -388,7 +388,6 @@ class MCLenia(DevModule, Automaton):
         """
         state = torch.fft.fft2(state)  # (B,C,H,W) fourier transform
         state = state[:, :, None, None, :]  # (B,C,1,1,H,W)
-        print('Selfc : ', self.C, 'kern shape : ', self.fft_kernel.shape)
         fft_unfolded = self.fft_kernel.reshape(self.batch, self.C, self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,h,w)
         state = state * fft_unfolded  # (B,C,k_mult,C,H,W), convoluted
         state = state.reshape(self.batch, self.C * self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,H,W)
@@ -406,6 +405,7 @@ class MCLenia(DevModule, Automaton):
 
         return self.state.mean(dim=(-1, -2))  # (B,C) mean mass for each color
 
+
     @torch.no_grad()
     def draw(self):
         """
@@ -422,14 +422,24 @@ class MCLenia(DevModule, Automaton):
         else:
             toshow = toshow[:3, :, :]  # (3,H,W)
 
-        if self.display_kernel == True:
-            kern = self.compute_ker()  # (C,3,k_size,k_size)
-            for i in range(kern.shape[0]):
-                toshow[:, self.h - self.k_size : self.h, i * self.k_size : (i + 1) * self.k_size] = kern[
-                    i
-                ].cpu()
+        if self.display_kernel:
+            toshow = self._draw_kernel(toshow)
 
         self._worldmap = torch.clamp(toshow, 0.0, 1.0)
+
+    def _draw_kernel(self,image):
+        """
+        Draws the kernel on the image.
+        """
+
+        horizontal_fit = self.w // self.k_size  # number of kernels that fit in the width
+        kern = self.compute_ker()  # (C*k_mult,3,k_size,k_size)
+        for i in range(kern.shape[0]):
+            height_offset = i//horizontal_fit+1
+            image[:, self.h - height_offset*self.k_size : self.h - (height_offset-1)*self.k_size, (i%horizontal_fit) * self.k_size : (i%horizontal_fit + 1) * self.k_size] = kern[
+                i
+            ].cpu()
+        return image  # (3,H,W)
 
     def process_event(self, event, camera=None):
         """

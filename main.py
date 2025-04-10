@@ -27,7 +27,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
         "DiffusionLenia": lambda h, w: DiffusionLenia(
-            (1, h, w),
+            (3, h, w),
             dt=0.1,
             num_channels=1,
             device=device,
