@@ -328,7 +328,7 @@ class LeniaParams(BatchParams):
 
         self._sanitize()
         self.to(device)
-
+        self.num_channels = channels
     def _sanitize(self):
         """
         Sanitizes the parameters by clamping them to valid values.
@@ -349,6 +349,62 @@ class LeniaParams(BatchParams):
         ## Normalize weights
         N = self.weights.sum(dim=1, keepdim=True)  # (B,1,C)
         self.weights = torch.where(N > 1.0e-6, self.weights / N, 0)
+
+    def reroll_params(self, kernel=True, arbi=False):
+        """
+            Rerolls part of the parameters (growth or kernels). 
+
+            Args:
+                kernels : if True, rerolls the kernels, otherwise rerolls the growth functions
+                arbi : if True, rerolls with arbitrary functions, otherwise rerolls with random_gen
+        """
+        if kernel:
+            if arbi:
+                from_fourier = LeniaParams._fourier_master(
+                    batch_size=self.batch_size,
+                    num_channels=self.param_dict['num_channels'],
+                    decay=0.3,
+                    harmonics=(1., 4),
+                    ranges=(0., 1.0),
+                    rescale=(-0.7,1.0),
+                    clip=0.0,
+                    device=self.device
+                )
+                self.k_coeffs = from_fourier["coeffs"]
+                self.k_harmonics = from_fourier["harmonics"]
+                self.k_rescale = from_fourier["rescale"]
+                self.k_clip = from_fourier["clip"]
+            else:
+                from_random_gen = LeniaParams.random_gen(
+                    batch_size=self.batch_size, num_channels=self.num_channels, k_size=self.k_size, device=self.device
+                ).param_dict
+                self.mu_k = from_random_gen["mu_k"]
+                self.sigma_k = from_random_gen["sigma_k"]
+                self.beta = from_random_gen["beta"]
+        else:
+            if arbi:
+                from_fourier = LeniaParams._fourier_master(
+                    batch_size=self.batch_size,
+                    num_channels=self.param_dict['num_channels'],
+                    decay=0.2,
+                    harmonics=(1., 3),
+                    ranges=(0., 2.0),
+                    rescale=(-1.0, 1.0),
+                    clip=-0.5,
+                    device=self.device
+                )
+                self.g_coeffs = from_fourier["coeffs"]
+                self.g_harmonics = from_fourier["harmonics"]
+                self.g_rescale = from_fourier["rescale"]
+                self.g_clip = from_fourier["clip"]
+            else:
+                from_random_gen = LeniaParams.random_gen(
+                    batch_size=self.batch_size, num_channels=self.num_channels, k_size=self.k_size, device=self.device
+                ).param_dict
+                self.mu = from_random_gen["mu"]
+                self.sigma = from_random_gen["sigma"]
+        
+        self._sanitize()
 
     @staticmethod
     def mixed_gen(
@@ -376,39 +432,40 @@ class LeniaParams(BatchParams):
         ).param_dict
         # from_random_gen = LeniaParams.default_gen(batch_size=batch_size,num_channels=num_channels,k_size=k_size,device=device).param_dict
         if k_arbi:
-            k_arbi = ArbitraryFunction.random_arbi(
-                func_num=batch_size * num_channels * num_channels,
-                n_coeffs=k_coeffs,
+            from_fourier = LeniaParams._fourier_master(
+                batch_size=batch_size,
+                num_channels=num_channels,
+                decay=None,
+                harmonics=(0., k_coeffs),
                 ranges=(0.0, 1.0),
                 rescale=k_rescale,
-                clips_min=0.0,
-                device=device,
-            )  # Generate random
-            params["k_coeffs"] = k_arbi.coefficients.reshape(
-                batch_size, num_channels, num_channels, k_coeffs * 2
+                clip=0.0,
+                device=device
             )
-            params["k_harmonics"] = k_arbi.harmonics.reshape(batch_size, num_channels, num_channels, k_coeffs)
-            params["k_rescale"] = k_rescale
+            params["k_coeffs"] = from_fourier["coeffs"]
+            params["k_harmonics"] = from_fourier["harmonics"]
+            params["k_rescale"] = from_fourier["rescale"]
+            params["k_clip"] = from_fourier["clip"]
         else:
             params["mu_k"] = from_random_gen["mu_k"]
             params["sigma_k"] = from_random_gen["sigma_k"]
             params["beta"] = from_random_gen["beta"]
         
         if g_arbi:
-            g_arbi = ArbitraryFunction.random_arbi(
-                func_num=batch_size * num_channels * num_channels,
-                n_coeffs=g_coeffs,
+            from_fourier = LeniaParams._fourier_master(
+                batch_size=batch_size,
+                num_channels=num_channels,
+                decay=None,
+                harmonics=(0., g_coeffs),
                 ranges=(0.0, 2.0),
-                clips_min=g_clip,
+                clip=g_clip,
                 rescale=g_rescale,
                 device=device,
             )
-            params["g_coeffs"] = g_arbi.coefficients.reshape(
-                batch_size, num_channels, num_channels, 2 * g_coeffs
-            )
-            params["g_harmonics"] = g_arbi.harmonics.reshape(batch_size, num_channels, num_channels, g_coeffs)
-            params["g_rescale"] = g_rescale
-            params["g_clip"] = g_clip
+            params["g_coeffs"] = from_fourier["coeffs"]
+            params["g_harmonics"] = from_fourier["harmonics"]
+            params["g_rescale"] = from_fourier["rescale"]
+            params["g_clip"] = from_fourier["clip"]
         else:
             params["mu"] = from_random_gen["mu"]
             params["sigma"] = from_random_gen["sigma"]
@@ -451,7 +508,7 @@ class LeniaParams(BatchParams):
         ).param_dict
 
         if k_arbi:
-            from_exp_gen = LeniaParams._exp_decay(batch_size=batch_size,num_channels=num_channels,decay=k_decay,harmo_start=k_harmo_start,n_coeffs=k_coeffs,ranges=(0.0, 1.0),rescale=k_rescale,clip=0.,device=device)
+            from_exp_gen = LeniaParams._fourier_master(batch_size=batch_size,num_channels=num_channels,decay=k_decay,harmonics=(k_harmo_start,k_coeffs),ranges=(0.0, 1.0),rescale=k_rescale,clip=0.,device=device)
 
             for key,value in from_exp_gen.items():
                 params['k_'+key] = value
@@ -460,7 +517,7 @@ class LeniaParams(BatchParams):
                 params[key] = from_random_gen[key]
         
         if g_arbi:
-            from_exp_gen = LeniaParams._exp_decay(batch_size=batch_size,num_channels=num_channels,decay=g_decay,harmo_start=g_harmo_start,n_coeffs=g_coeffs,ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
+            from_exp_gen = LeniaParams._fourier_master(batch_size=batch_size,num_channels=num_channels,decay=g_decay,harmonics=(g_harmo_start,g_coeffs),ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
 
             for key,value in from_exp_gen.items():
                 params['g_'+key] = value
@@ -574,7 +631,7 @@ class LeniaParams(BatchParams):
         ).param_dict
 
         if k_arbi:
-            from_fourier = LeniaParams._fourier_range(batch_size=batch_size,num_channels=num_channels,harmonics=k_harmonics,ranges=(0.0, 1.0),rescale=k_rescale,device=device)
+            from_fourier = LeniaParams._fourier_master(batch_size=batch_size,num_channels=num_channels,harmonics=k_harmonics,ranges=(0.0, 1.0),rescale=k_rescale,device=device)
             params["k_coeffs"] = from_fourier["coeffs"]
             params["k_harmonics"] = from_fourier["harmonics"]
             params["k_rescale"] = from_fourier["rescale"]
@@ -585,7 +642,7 @@ class LeniaParams(BatchParams):
             params["beta"] = from_random_gen["beta"]
         
         if g_arbi:
-            from_fourier = LeniaParams._fourier_range(batch_size=batch_size,num_channels=num_channels,harmonics=g_harmonics,ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
+            from_fourier = LeniaParams._fourier_master(batch_size=batch_size,num_channels=num_channels,harmonics=g_harmonics,ranges=(0.0, 2.0),rescale=g_rescale,clip=g_clip,device=device)
             params["g_coeffs"] = from_fourier["coeffs"]
             params["g_harmonics"] = from_fourier["harmonics"]
             params["g_rescale"] = from_fourier["rescale"]
@@ -677,69 +734,51 @@ class LeniaParams(BatchParams):
         return LeniaParams(params, device=device)
 
     #========== BELOW, UTILITY FUNCTIONS FOR GENERATING ARBI PARAMETERS ==========
-    @staticmethod
-    def _fourier_range(batch_size, num_channels, harmonics:torch.Tensor, ranges, rescale=None, clip=None,device='cpu'):
+    @staticmethod 
+    def _fourier_master(batch_size, num_channels, harmonics,  ranges, decay=None, rescale=None, clip=None, device='cpu'):
         """
-            Generate arbitrary function with Fourier range.
+            Master fourier function generator. Has all the options for generating Fourier functions parameters.
+
             Args:
                 batch_size : number of parameters to generate
                 num_channels : number of channels in the automaton
-                harmonics :(num_harmonics,) integers harmonics to be used
-                ranges : tuple, x-range for the functions
-                rescale : tuple, (min,max) range of the x values for the function to be rescaled to
-                clips_min : float, after rescaling will clip to this value
-                device : device on which to generate the parameters
-            
-            Returns:
-                dict of batched parameters, keys ('coeffs', 'harmonics', 'rescale', 'clip', 'ranges')
-        """
-        num_harmonics = len(harmonics)
-        harmonics = torch.tensor(harmonics, device=device)[None,None,None,:].expand(batch_size,num_channels,num_channels,num_harmonics) # (batch_size*num_channels*num_channels,num_harmonics*2)
-        coeffs = torch.randn((batch_size,num_channels,num_channels,num_harmonics*2), device=device) # (batch_size*num_channels*num_channels,num_harmonics*2)
-
-        return {
-                "coeffs": coeffs,
-                "harmonics": harmonics,
-                "rescale": rescale,
-                "clip": clip,
-                "ranges": ranges,
-                }
-
-    @staticmethod
-    def _exp_decay(batch_size, num_channels, decay, n_coeffs, ranges, harmo_start=0, rescale=None, clip=None, device='cpu'):
-        """
-            Generate arbitrary function with exponential decay.
-            Args:
-                batch_size : number of parameters to generate
-                num_channels : number of channels in the automaton
+                harmonics : determines the harmonics to be used. Has many modes listed below:
+                    - tuple (harmo_start, num_harmonics) : will generate num_harmonics harmonics starting from harmo_start
+                    - float tensor (num_harmonics,) : will use the harmonics in the specified tensor, for all batches and channels
+                    - float tensor (batch_size*num_channels*num_channels,num_harmonics) : will use the harmonics in the specified tensor, can be different for each batch and channel
+                (num_harmonics,) integers or (batch_size*num_channels*num_channels,num_harmonics) harmonics to be used
                 decay : float, decay rate for the exponential function
-                n_coeffs : int, number of coefficients for the function
-                ranges : tuple, x-range for the functions
-                harmo_start : int, start value for the coefficients
+                ranges : tuple, x-range for the functions. NOTE : could support different ranges for the functions, but not useful right now.
                 rescale : tuple, (min,max) range of the x values for the function to be rescaled to
-                clips_min : float, after rescaling will clip to this value
+                clip : float, after rescaling will clip to this value
                 device : device on which to generate the parameters
-            
-            Returns:
-                dict of batched parameters, keys ('coeffs', 'harmonics', 'rescale', 'clip', 'ranges')
         """
-        coeffs = torch.randn((batch_size, num_channels, num_channels, n_coeffs,2), device=device)
-        dampening = torch.exp(
-            -decay*torch.arange(0, n_coeffs, device=device).float())[None,None,None,:,None] # (1,1,1,k_coeffs,1)
-        coeffs = coeffs * dampening
-        coeffs = coeffs.reshape((batch_size,num_channels,num_channels, n_coeffs * 2))
-        harmonics = torch.arange(harmo_start, harmo_start+n_coeffs, device=device)[None,:].expand(batch_size*num_channels*num_channels,n_coeffs)
-        harmonics = harmonics.reshape(batch_size,num_channels,num_channels,n_coeffs)
+        if isinstance(harmonics, tuple):
+            harmo_start, num_harmonics = harmonics
+            harmonics = torch.arange(harmo_start, harmo_start+num_harmonics, device=device)[None,:].expand(batch_size*num_channels*num_channels,num_harmonics)
+        elif isinstance(harmonics, torch.Tensor):
+            if len(harmonics.shape) == 1:
+                harmonics = harmonics[None,:].expand(batch_size*num_channels*num_channels,-1)
+            elif len(harmonics.shape) == 2:
+                assert harmonics.shape[0] == batch_size*num_channels*num_channels, f"Expected harmonics tensor of shape ({batch_size*num_channels*num_channels},{harmonics.shape[1]}), got {harmonics.shape}"
 
-        params ={
+
+        num_harmonics = harmonics.shape[1]
+        coeffs = torch.randn((batch_size,num_channels,num_channels,num_harmonics,2), device=device) # (batch_size,num_channels,num_channels,num_harmonics,2)
+        if decay is not None:
+            dampening = torch.exp(
+                -decay*torch.arange(0, num_harmonics, device=device).float())[None,None,None,:,None]
+            coeffs = coeffs * dampening
+        
+        coeffs = coeffs.reshape((batch_size,num_channels,num_channels, num_harmonics * 2)) # (batch_size,num_channels,num_channels,num_harmonics*2)
+        harmonics = harmonics.reshape(batch_size,num_channels,num_channels,num_harmonics) # (batch_size,num_channels,num_channels,num_harmonics)
+        return {
             "coeffs": coeffs,
             "harmonics": harmonics,
             "rescale": rescale,
             "clip": clip,
             "ranges": ranges,
         }
-
-        return params
 
     @staticmethod
     def _universal_params(batch_size, num_channels, k_size=31, diag_inhibition=0.8, device='cpu' ):

@@ -15,7 +15,7 @@ class ArbitraryFunction(nn.Module):
     def __init__(
         self,
         coefficients: Tensor,
-        ranges: Tensor,
+        ranges: Tensor|tuple,
         harmonics: Tensor = None,
         rescale: tuple = None,
         clips_min=None,

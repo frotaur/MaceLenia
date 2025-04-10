@@ -107,8 +107,6 @@ class MCLenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
-        self.cutoff = False  # For the arbitrary function, if we want to cut off the function outside the range
-
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
         Updates parameters of the automaton.
@@ -338,7 +336,6 @@ class MCLenia(DevModule, Automaton):
                 ranges=ranges,
                 rescale=self.params["g_rescale"],
                 clips_min=self.params["g_clip"],
-                cut_off=self.cutoff,
                 device=self.device,
             )
 
@@ -431,14 +428,13 @@ class MCLenia(DevModule, Automaton):
     def process_event(self, event, camera=None):
         """
         N (+ shift) -> New random (truerandom) parameters
-        A -> Random parameters using ArbitraryFunction
+        A -> Random params, with arbitrary function (if active)
+        W (+shift) -> Reroll kernel (growth)
         M -> Load new interesting param
         U -> Variate around parameters
-        I -> Intialize with fractal perlin
-        J -> Initialize with perlin
+        I (+shift/+ctrl) -> Intialize with perlin noise
         O -> Initialize with circle
-        L -> Initialize with random wavelength perlin
-        S -> Save the current parameters
+        S (+shift) -> Save the current parameters (+state)
         K -> Toggle display kernel
         Y (+shift) -> Toggle arbi random param generation
         DEL -> sets state to 0
@@ -462,7 +458,7 @@ class MCLenia(DevModule, Automaton):
                     k_size=self.k_size,
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
-                    k_coeffs=6,
+                    k_coeffs=4,
                     g_coeffs=3,
                     g_clip=-0.5
                 )
@@ -473,17 +469,25 @@ class MCLenia(DevModule, Automaton):
                 mutated_params = self.params.mutate(magnitude=0.1, rate=0.8)
                 self.update_params(mutated_params, k_size_override=None)
             if event.key == pygame.K_i:
-                # Intialize with fractal perlin
-                self.set_init_fractal()
-            if event.key == pygame.K_j:
-                # Initialize with perlin
-                self.set_init_perlin()
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    # Intialize with fractal perlin
+                    self.set_init_fractal()
+                elif(pygame.key.get_mods() & pygame.KMOD_CTRL):
+                    # Initialize with random wavelength perlin
+                    sq_size = random.randint(5, min(self.h, self.w))
+                    self.set_init_perlin(wavelength=sq_size)
+                else:
+                    self.set_init_perlin()
+            if event.key == pygame.K_w:
+                # Reroll growth/kernel
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.params.reroll_params(kernel=False, arbi=self.g_arbi)
+                else:
+                    self.params.reroll_params(kernel=True, arbi=self.k_arbi)
+                self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
             if event.key == pygame.K_o:
                 self.set_init_circle()
-            if event.key == pygame.K_l:
-                # Initialize with random wavelength perlin
-                sq_size = random.randint(5, min(self.h, self.w))
-                self.set_init_perlin(wavelength=sq_size)
+
             if event.key == pygame.K_y:
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
                     self.g_arbi = not self.g_arbi
@@ -514,9 +518,7 @@ class MCLenia(DevModule, Automaton):
                 self.state = torch.zeros_like(self.state)
             if event.key == pygame.K_t:
                 # Modify it when testing
-                
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                    self.cutoff=not self.cutoff
                     self.growth = self.compute_growth()  # growth function, callable
                 else:
                     params = LeniaParams.exp_decay_gen(
