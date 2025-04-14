@@ -329,7 +329,10 @@ class LeniaParams(BatchParams):
 
         assert "weights" in self.param_dict.keys(), 'LeniaParams need "weights" tensor'
         assert "k_size" in self.param_dict.keys(), 'LeniaParams need "k_size" value'
-
+        if( "k_mult" not in self.param_dict.keys()):
+            self.k_mult = 1 # legacy param that has no k_mult
+        if( "num_channels" not in self.param_dict.keys()):
+            self.num_channels = channels # legacy param that has no num_channels
         self._sanitize()
         self.to(device)
 
