@@ -11,7 +11,7 @@ from .. import DiffusionLenia
 import itertools
 import math
 
-class EvolvableDiffusionLenia(DiffusionLeniaCrossChannel):
+class EvolvableDiffusionLenia(DiffusionLenia):
     """ An evolvable version of DiffusionLenia"""
 
     def __init__(

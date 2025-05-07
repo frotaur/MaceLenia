@@ -4,7 +4,7 @@ from nltk.downloader import update
 from numpy.ma.core import minimum
 from sympy.abc import alpha
 
-from .. import DiffusionLenia
+from . import DiffusionLenia
 from ..models.utils.torch_utils import unfold3d
 from .lenia import MCLenia
 import random
@@ -52,7 +52,13 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
         self.Aff = self.compute_affinity()
         self.show_batch = 0
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
-        
+        self.alpha = 0.03
+        self.params['alpha'] = self.alpha
+
+    def update_params(self, params, k_size_override=None):
+        super().update_params(params, k_size_override=k_size_override)
+        if('alpha' in params):
+            self.alpha = params['alpha']
 
     def step(self, sense_food = False):
         """
@@ -62,7 +68,7 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
         Aff = self.compute_affinity()
     
         Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W)
         Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
 
         state_portions = self.state/Z
@@ -71,35 +77,35 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
         self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
         B, C, H, W = self.state.shape
 
-        Aff = self.compute_affinity(sense_food=sense_food)
+        Aff = self.compute_affinity(sense_food=sense_food) # (B,C,H,W) first step affinity, usual convolutions
+        Aff_exp = torch.exp(self.temp * Aff) # (B,C,H,W) exponential affinity
 
 
-        Aff_exp = F.pad(Aff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
-        Aff_exp = F.unfold(Aff_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
-        E = Aff_exp.sum(dim=2)
-        E_exp = F.pad(E, (1, 1, 1, 1), mode="circular")
-        E_exp = F.unfold(E_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
-        state_exp = F.pad(self.state, (1, 1, 1, 1), mode="circular")
-        state_exp = F.unfold(state_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        Aff_unfold = F.pad(Aff_exp, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
+        Aff_unfold = F.unfold(Aff_unfold, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
+        Z = Aff_unfold.sum(dim=2)
+        Z = F.pad(Z, (1, 1, 1, 1), mode="circular")
+        Z = F.unfold(Z, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
+        state_unfold = F.pad(self.state, (1, 1, 1, 1), mode="circular")
+        state_unfold = F.unfold(state_unfold, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
 
-        self.state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
+        self.state = ((Aff_exp[:, :, None, ...] / Z) * state_unfold).sum(dim=2)
 
-        min_aff = Aff.min(dim=1, keepdim=True)[0]
-        max_aff = Aff.max(dim=1, keepdim=True)[0]
-        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-10)
-        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True) + 1e-10)
+        # min_aff = Aff.min(dim=1, keepdim=True)[0]
+        # max_aff = Aff.max(dim=1, keepdim=True)[0]
+        # Aff_norm = (Aff - min_aff) / (max_aff - min_aff + 1e-10)
+        # Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True) + 1e-10)
+        # Aff_c = torch.exp(self.temp*Aff) / (torch.exp(self.temp*Aff).sum(dim=1, keepdim=True) + 1e-7)  # (B,C,H,W) cross channel affinity normalization
+        max_Aff = torch.max(Aff, dim=1, keepdim=True)[0]
+        Aff_shifted = self.temp*(Aff - max_Aff)
+        numerator = torch.exp(Aff_shifted)
+        Aff_c = numerator / (numerator.sum(dim=1, keepdim=True))
 
         target_cross_c_masses = self.state.sum(dim=1, keepdim=True) * Aff_c
-        diff_target = self.state - target_cross_c_masses
-        alpha = 0.4/self._temp
-        self.state -= diff_target * alpha
-
-
-
+        self.state = self.state - (self.state-target_cross_c_masses) * self.alpha
 
 
         if self.has_food:
-
             alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0002))
             self.state = (self.state  - alowable_decay)
 
@@ -139,18 +145,17 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
 
     def compute_affinity(self, sense_food = False):
         """
-        Computes the affinity matrix of the model
+        Computes the pre-exponential affinity matrix of the model
         """
         if sense_food and self.has_food:
             a = self.state.clone()
             a[:,0:1,...] += self.food_channel
             Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
-
         else:
-            Aff = self.kernel_fftconv(self.state)
+            Aff = self.kernel_fftconv(self.state)  # (B,C,C,H,W) first step affinity, usual convolutions
+
         weights = self.weights[..., None, None]  # (B,C,C,1,1)
         Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
-        Aff = torch.exp(self.temp * Aff)
 
         return Aff
 
@@ -176,14 +181,20 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
                 self.update_show_batch(1)
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
+            if event.key == pygame.K_LEFT:
+                self.alpha -= 0.02
+                self.params['alpha'] = self.alpha
+            if event.key == pygame.K_RIGHT:
+                self.alpha += 0.02
+                self.params['alpha'] = self.alpha
 
-    process_event.__doc__ = DiffusionLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 
 
     def get_string_state(self):
-        return f"R _total Mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
+        return super().get_string_state()+f"alpha: {self.alpha:.2f}"
     
     def random_food_chan(self, num_spots=100, food_size=5, add_to_exisitng = False,  channels= []):
         """

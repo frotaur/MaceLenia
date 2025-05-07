@@ -419,6 +419,7 @@ class LeniaParams(BatchParams):
     def mixed_gen(
         batch_size,
         num_channels=3,
+        sigma_size=1.,
         k_size=None,
         k_mult=1,
         k_arbi=True,
@@ -438,7 +439,7 @@ class LeniaParams(BatchParams):
             batch_size=batch_size, num_channels=num_channels, k_size=k_size, k_mult=k_mult, device=device)
         
         from_random_gen = LeniaParams.random_gen(
-            batch_size=batch_size, num_channels=num_channels, k_size=k_size, k_mult=k_mult, device=device
+            batch_size=batch_size, num_channels=num_channels, sigma_size=sigma_size, k_size=k_size, k_mult=k_mult, device=device
         ).param_dict
         # from_random_gen = LeniaParams.default_gen(batch_size=batch_size,num_channels=num_channels,k_size=k_size,device=device).param_dict
         if k_arbi:
@@ -578,7 +579,7 @@ class LeniaParams(BatchParams):
         return LeniaParams(params,device=device)
     
     @staticmethod
-    def random_gen(batch_size, num_channels=3, k_size=None, k_mult=1, device="cpu"):
+    def random_gen(batch_size, num_channels=3, k_size=None, k_mult=1, sigma_size=1., device="cpu"):
         """
         Full random generation for standard Lenia Parameters. Weights are biased towards
         self-interaction.
@@ -594,7 +595,7 @@ class LeniaParams(BatchParams):
             batch_size=batch_size, num_channels=num_channels, k_size=k_size, k_mult=k_mult, device=device
         )
         mu = torch.rand((batch_size, num_channels*k_mult, num_channels), device=device)
-        sigma = torch.rand((batch_size, num_channels*k_mult, num_channels), device=device) + 1e-4
+        sigma = sigma_size*torch.rand((batch_size, num_channels*k_mult, num_channels), device=device) + 1e-4
 
         params = {
             "mu": mu,

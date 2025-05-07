@@ -132,9 +132,11 @@ class FlowLenia(MCLenia):
 
         grad_x = sobel(self.state.sum(dim=1, keepdims=True))
 
-        alpha = (((self.state.permute(0,2,3,1)[:,:,:,None,:] / self.theta_x) ** self.n)).clip(0, 1)
-        F = grad_u * (1 - alpha) - grad_x * alpha
+        # added a sum over the channel in the alpha computation, as in the paper
+        alpha = (((self.state.permute(0,2,3,1)[:,:,:,None,:].sum(dim=-1,keepdims=True) / self.theta_x) ** self.n)).clip(0, 1)
 
+        F = grad_u * (1 - alpha) - grad_x * alpha
+        # F= grad_u
 
         return F
 

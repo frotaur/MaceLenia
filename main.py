@@ -31,9 +31,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             dt=0.1,
             num_channels=3,
             device=device,
-            has_food=False,
-            save_dir="saved_diff_lenia",
-            interest_files=(cur_dir / "demo_params").as_posix(),
+            has_food=True,
+            save_dir="demo_macelenia",
+            interest_files=(cur_dir / "demo_macelenia").as_posix(),
         ),
         "DiffusionLeniaCrossChannel": lambda h, w: DiffusionLeniaCrossChannel(
             (1, h, w),
@@ -41,14 +41,14 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             num_channels=3,
             device=device,
             has_food=False,
-            save_dir="saved_diff_lenia",
-            interest_files=(cur_dir / "demo_params").as_posix(),
+            save_dir="demo_xchanmacelenia",
+            interest_files=(cur_dir / "demo_xchanmacelenia").as_posix(),
         ),
         "Lenia": lambda h, w: MCLenia(
             (1, h, w),
             dt=0.1,
             num_channels=3,
-            save_dir="saved_lenia",
+            save_dir="demo_lenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
         ),
@@ -68,7 +68,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             (4, h, w),
             dt=0.1,
             num_channels=3,
-            save_dir="saved_diff_lenia",
+            save_dir="demo_macelenia",
             interest_files=(cur_dir / "demo_params").as_posix(),
             device=device,
             has_food=False,
@@ -414,7 +414,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
         if not stopped:
-            auto.step()  # step the automaton
+            auto.step(sense_food=True)  # step the automaton
 
 
         auto.draw()  # draw the worldstate

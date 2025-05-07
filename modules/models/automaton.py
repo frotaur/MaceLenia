@@ -58,6 +58,9 @@ class Automaton:
         self.h, self.w = new_size
         self.size = new_size
         self._worldmap = torch.zeros((3, self.h, self.w), dtype=float)
+        x = torch.arange(0, self.w, dtype=float)
+        y = torch.arange(0, self.h, dtype=float)
+        self.Y, self.X = torch.meshgrid(y, x, indexing='ij') # (H,W)
 
     @property
     def worldmap(self):

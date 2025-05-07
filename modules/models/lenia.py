@@ -128,6 +128,8 @@ class MCLenia(DevModule, Automaton):
         self.weights = params.get("weights", self.weights)
         self.k_size = params.get("k_size", self.k_size)  # kernel sizes (same for all)
         self.k_mult = params.get("k_mult", self.k_mult)  # number of kernels (same for all)
+        self.g_arbi = params.get("g_arbi", self.g_arbi)  # whether to use arbitrary function for growth
+        self.k_arbi = params.get("k_arbi", self.k_arbi)  # whether to use arbitrary function for kernel
 
         if k_size_override is not None:
             self.k_size = k_size_override
@@ -349,7 +351,6 @@ class MCLenia(DevModule, Automaton):
                 return out.reshape(B, Ck, C, H, W)
 
             return growth
-
         else:
             mu = self.mu[..., None, None]  # (B,C*k_mult,C,1,1)
             sigma = self.sigma[..., None, None]  # (B,C*k_mult,C,1,1)
@@ -475,8 +476,10 @@ class MCLenia(DevModule, Automaton):
                     device=self.device,
                     k_size=self.k_size,
                     k_mult=self.k_mult,
+                    k_rescale=(-0.5,1),
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
+                    sigma_size=.3,
                     k_coeffs=4,
                     g_coeffs=3,
                     g_clip=-0.5
@@ -531,7 +534,7 @@ class MCLenia(DevModule, Automaton):
                     self._save_with_state(self.save_dir)
                 else:
                     # Save the current parameters to remarkable dir :
-                    self.params.save_indiv(self.save_dir, annotation=["_nice"])
+                    self._save(self.save_dir)
             if event.key == pygame.K_k:
                 # Toggle display kernel
                 self.display_kernel = not self.display_kernel
@@ -616,6 +619,13 @@ class MCLenia(DevModule, Automaton):
         to_save = deepcopy(self.params)
         to_save.state = self.state
         to_save.save_indiv(path, batch_name=True, annotation=["_state"])
+
+    def _save(self, path):
+        to_save = deepcopy(self.params)
+        to_save['g_arbi'] = self.g_arbi
+        to_save['k_arbi'] = self.k_arbi
+        
+        to_save.save_indiv(path, batch_name=False)
 
     def _load_state(self, state):
         """ "

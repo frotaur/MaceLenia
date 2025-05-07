@@ -52,10 +52,6 @@ class DiffusionLenia(MCLenia):
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
         self.show_all = False
         self.show_all_override = False
-
-
-
-
         
 
     def step(self, sense_food = False):
@@ -72,12 +68,12 @@ class DiffusionLenia(MCLenia):
 
         state_portions = self.state/Z
         state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
+        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W)
         self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
 
         if self.has_food:
             # Decay proportionally to mass, but with a minimum rate
-            alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0002))
+            alowable_decay = torch.minimum(self.state, self.state*0.0003 + torch.full_like(self.state, 0.0001))
             self.state = (self.state  - alowable_decay)
 
             # Compute all mass lost, when above some threshold, reintroduce the mass as food
@@ -130,7 +126,7 @@ class DiffusionLenia(MCLenia):
         else:
             Aff = self.kernel_fftconv(self.state)
         weights = self.weights[..., None, None]  # (B,C,C,1,1)
-        Aff = (-self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
+        Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
         Aff = torch.exp(self.temp * Aff)
 
         return Aff
