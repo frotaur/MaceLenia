@@ -34,7 +34,7 @@ class DiffusionLenia(MCLenia):
             device : str, device to use
         """
         self.has_food = has_food # Needed for initialization
-
+        self.initial_food = 10000
         super().__init__(
             size,
             dt,
@@ -53,6 +53,9 @@ class DiffusionLenia(MCLenia):
         self.show_all = False
         self.show_all_override = False
         
+        kernel_size = 7
+        self.smear_kernel = torch.ones((1,1,kernel_size,kernel_size), device=self.device)/(kernel_size*kernel_size) # (1,1,kernel_size,kernel_size)
+
 
     def step(self, sense_food = False):
         """
@@ -60,8 +63,8 @@ class DiffusionLenia(MCLenia):
         """
 
         B,C,H,W = self.state.shape
+
         Aff = self.compute_affinity(sense_food=sense_food) # (B,C,H,W) affinity matrix
-    
         Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
         Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
         Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
@@ -72,28 +75,31 @@ class DiffusionLenia(MCLenia):
         self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
 
         if self.has_food:
+            food_amount = 200
             # Decay proportionally to mass, but with a minimum rate
-            alowable_decay = torch.minimum(self.state, self.state*0.0003 + torch.full_like(self.state, 0.0001))
-            self.state = (self.state  - alowable_decay)
-
+            # alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0003))
+            # alowable_decay = torch.where(self.state>0.01,self.state*0.0007+torch.full_like(self.state,0.02*0.0005), torch.zeros_like(self.state))
+            
+            allowable_decay = torch.where(self.state>0.005,0.0003, torch.zeros_like(self.state))
+            self.state = (self.state  - allowable_decay)  # Update the state by subtracting the allowable decay
             # Compute all mass lost, when above some threshold, reintroduce the mass as food
-            self.cum_loss_mass+= (alowable_decay).view(self.batch, -1).sum(dim = 1)
-            update_idxs = torch.argwhere(self.cum_loss_mass >= 100).tolist()
+            self.cum_loss_mass+= (allowable_decay).view(self.batch, -1).sum(dim = 1)
+            update_idxs = torch.argwhere(self.cum_loss_mass >= food_amount).tolist()
             update_idxs = [p[0] for p in update_idxs]
 
             if update_idxs:
-                self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - 100
-                self.food_channel = self.random_food_chan(num_spots=1,food_size=5,add_to_exisitng=True,channels=update_idxs)
+                self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - food_amount
+                self.food_channel = self.random_food_chan(food_amount=food_amount,num_spots=1,food_size=7,add_to_exisitng=True,channels=update_idxs)
 
-            self.update_food(min_density=0.05,transfer_rate=0.06, death_enabled=False)
-
-
+            self.update_food(min_density = 0.05,transfer_rate=0.06, death_enabled=False)
 
 
-    def update_food(self, min_density =0.1, transfer_rate = 0.03, death_enabled = False):
+
+
+    def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
         """uncomment the death sections for death mechanics, but its finicky and i dont like it """
         where_food = self.food_channel > 0  # Where the food channels are
-        where_contact = (self.state.sum(dim=1)[:, None, :, :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
+        where_contact = (self.state.sum(dim=1,keepdim=True) >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
 
         if death_enabled:
             death = ((self.state < 0.04) & (self.state > 0)) * self.state  # death of the feeding channel, very finicky
@@ -115,18 +121,29 @@ class DiffusionLenia(MCLenia):
         self.show_batch = (self.show_batch + dirr) % self.batch
 
 
+
     def compute_affinity(self, sense_food = False):
         """
         Computes the affinity matrix of the model
         """
-        if sense_food and self.has_food:
-            a = self.state.clone()
-            a[:,0:1,...] += self.food_channel # Add food channel to the state 'r' channel, for sensing
-            Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
-        else:
-            Aff = self.kernel_fftconv(self.state)
+        # if sense_food and self.has_food:
+            # a = self.state.clone()
+            # a[:,0:1,...] += self.food_channel # Add food channel to the state 'r' channel, for sensing
+            # Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
+        # else:
+        #     Aff = self.kernel_fftconv(self.state)
+
+        Aff = self.kernel_fftconv(self.state)
         weights = self.weights[..., None, None]  # (B,C,C,1,1)
         Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
+        
+        if(self.has_food and sense_food):
+            food_aff = (self.food_channel>0).float().expand(-1, self.C, -1, -1) # (B,1,H,W) food channel
+            # Optional : increase affinity according also to how much food is sensed
+            food_aff = food_aff + self.kernel_fftconv(food_aff).sum(dim=1) # (B,1,H,W) food channel
+            # Hardcoded for now, but remove affinity when matter is too low, so it cant eat
+            Aff = Aff + (food_aff)#*(self.state>0.05) # (B,C,H,W) food affinity
+
         Aff = torch.exp(self.temp * Aff)
 
         return Aff
@@ -180,9 +197,9 @@ class DiffusionLenia(MCLenia):
     )  # Hack to append the docstring of MCLenia.process_event
 
     def get_string_state(self):
-        return super().get_string_state()+f" total mass: {self.state.sum().item():.2f}, temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
+        return super().get_string_state()+f"tot mass: {self.total_mass():.2f}, live: {self.state.sum():.2f} temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
     
-    def random_food_chan(self, num_spots=100, food_size=5, add_to_exisitng = False,  channels= []):
+    def random_food_chan(self, food_amount, num_spots=300, food_size=5, add_to_exisitng = False, channels= []):
         """
             Returns a food channel with num_spots of food of size food_size
             Args :
@@ -192,6 +209,7 @@ class DiffusionLenia(MCLenia):
             Returns :
                 food_chan : tensor, (B,1,H,W) food channel
         """
+        food_density = food_amount/(num_spots*food_size*food_size) # food_size*food_size is the area of the food spot
         places = [[random.randint(food_size, self.h - food_size), random.randint(food_size, self.w - food_size)] for _ in
                   range(num_spots)]
 
@@ -201,11 +219,10 @@ class DiffusionLenia(MCLenia):
             food_chan = torch.zeros((self.batch, 1, self.h, self.w), device=self.device)
         for place in places:
             if add_to_exisitng:
-                food_chan[channels, :, place[0] - food_size: place[0] + food_size,
-                place[1] - food_size:place[1] + food_size] = 1
-
+                food_chan[channels, :, place[0] - food_size//2: place[0] + food_size//2+1,
+                place[1] - food_size//2:place[1] + food_size//2+1] = food_density
             else:
-                food_chan[:,:,place[0] - food_size: place[0] + food_size, place[1] - food_size:place[1] + food_size] = 1
+                food_chan[:,:,place[0] - food_size//2: place[0] + food_size//2+1, place[1] - food_size//2:place[1] + food_size//2+1] = food_density
         
         return food_chan
 
@@ -214,19 +231,19 @@ class DiffusionLenia(MCLenia):
     def set_init_fractal(self):
         super().set_init_fractal()
         if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
+            self.food_channel = self.random_food_chan(food_amount=self.initial_food) # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
 
     def set_init_perlin(self, wavelength=None):
         super().set_init_perlin(wavelength)
         if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
+            self.food_channel = self.random_food_chan(food_amount=self.initial_food) # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
 
     def set_init_circle(self, fractal=False, radius=None):
         super().set_init_circle(fractal, radius)
         if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
+            self.food_channel = self.random_food_chan(food_amount=self.initial_food) # (B,1, H,W)
             self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
 
 
@@ -298,3 +315,11 @@ class DiffusionLenia(MCLenia):
 
             self._worldmap = torch.clamp(toshow, 0., 1.)
 
+    def total_mass(self):
+        """
+        Returns the total mass of the model
+        """
+        if(self.has_food):
+            return (self.state.sum(dim=(1, 2, 3)) + self.food_channel.sum(dim=(1, 2, 3)))[0]
+        else:
+            return self.state.sum(dim=(1, 2, 3))[0]

@@ -501,7 +501,11 @@ class MCLenia(DevModule, Automaton):
                 else:
                     self.set_init_perlin()
             if event.key == pygame.K_o:
-                self.set_init_circle()
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.set_init_circle(radius=5*self.k_size)
+                else:
+                    # Initialize with circle
+                    self.set_init_circle(fractal=False)
 
             if event.key == pygame.K_w:
                 # Reroll growth/kernel
