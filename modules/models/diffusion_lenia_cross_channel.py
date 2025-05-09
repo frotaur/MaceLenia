@@ -35,7 +35,6 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
             state_init : tensor, initial state of the automaton
             device : str, device to use
         """
-        self.has_food = has_food # Needed for initialization
 
         super().__init__(
             size,
@@ -43,15 +42,13 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
             num_channels,
             params,
             state_init,
+            has_food=has_food,
             device=device,
             interest_files=interest_files,
             save_dir=save_dir,
         )
 
-        self._temp = 1
-        self.Aff = self.compute_affinity()
-        self.show_batch = 0
-        self.cum_loss_mass = torch.zeros(self.batch, device=device)
+        self._temp = 6 # default temperature is 6 for this one
         self.alpha = 0.03
         self.params['alpha'] = self.alpha
 
@@ -64,38 +61,13 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
         """
         Steps the alife model by one time step
         """
-        """B,C,H,W = self.state.shape
-        Aff = self.compute_affinity()
-    
-        Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W)
-        Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
+        Aff = self._mace_step(sense_food=sense_food)
+        if self.has_food:
+            self._food_step()
+        self._cross_chan_step(Aff)  # (B,C,H,W) cross channel step
 
-        state_portions = self.state/Z
-        state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
-        self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion"""
-        B, C, H, W = self.state.shape
-
-        Aff = self.compute_affinity(sense_food=sense_food) # (B,C,H,W) first step affinity, usual convolutions
-        Aff_exp = torch.exp(self.temp * Aff) # (B,C,H,W) exponential affinity
-
-
-        Aff_unfold = F.pad(Aff_exp, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
-        Aff_unfold = F.unfold(Aff_unfold, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
-        Z = Aff_unfold.sum(dim=2)
-        Z = F.pad(Z, (1, 1, 1, 1), mode="circular")
-        Z = F.unfold(Z, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
-        state_unfold = F.pad(self.state, (1, 1, 1, 1), mode="circular")
-        state_unfold = F.unfold(state_unfold, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C,9,H,W)
-
-        self.state = ((Aff_exp[:, :, None, ...] / Z) * state_unfold).sum(dim=2)
-
-        # min_aff = Aff.min(dim=1, keepdim=True)[0]
-        # max_aff = Aff.max(dim=1, keepdim=True)[0]
-        # Aff_norm = (Aff - min_aff) / (max_aff - min_aff + 1e-10)
-        # Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True) + 1e-10)
-        # Aff_c = torch.exp(self.temp*Aff) / (torch.exp(self.temp*Aff).sum(dim=1, keepdim=True) + 1e-7)  # (B,C,H,W) cross channel affinity normalization
+    def _cross_chan_step(self,Aff):
+        """Performs the cross channel step, given the affinity matrix"""
         max_Aff = torch.max(Aff, dim=1, keepdim=True)[0]
         Aff_shifted = self.temp*(Aff - max_Aff)
         numerator = torch.exp(Aff_shifted)
@@ -105,82 +77,14 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
         self.state = self.state - (self.state-target_cross_c_masses) * self.alpha
 
 
-        if self.has_food:
-            alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0002))
-            self.state = (self.state  - alowable_decay)
 
-            self.cum_loss_mass+= (alowable_decay).view(self.batch, -1).sum(dim = 1)
-            update_idxs = torch.argwhere(self.cum_loss_mass >= 100).tolist()
-            update_idxs = [p[0] for p in update_idxs]
-
-            if update_idxs:
-                self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - 100
-                self.food_channel = self.random_food_chan(num_spots=1,food_size=5,add_to_exisitng=True,channels=update_idxs)
-
-            self.update_food(min_density=0.05,transfer_rate=0.06, death_enabled=False)
-
-    def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
-        """uncomment the death sections for death mechanics, but its finicky and i dont like it """
-        where_food = self.food_channel > 0  # Where the food channels are
-        where_contact = (self.state[:, 2:3, :,
-                         :] >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
-
-        if death_enabled:
-            death = ((self.state < 0.04) & (self.state > 0)) * self.state  # death of the feeding channel, very finicky
-
-        overlap = where_food & where_contact  # where the channels overlap
-        transfer = torch.minimum(self.food_channel, torch.ones_like(where_food) * overlap * transfer_rate)
-
-        self.state[:, 1:2, ...] += transfer  # Lenia mass increase
-
-        self.food_channel -= transfer
-
-        if death_enabled:
-            self.state -= death
-            self.food_channel += death.sum(dim=1, keepdim=True)
-
-    def update_show_batch(self, dirr):
-        self.show_batch = (self.show_batch + dirr) % self.batch
-
-
-    def compute_affinity(self, sense_food = False):
-        """
-        Computes the pre-exponential affinity matrix of the model
-        """
-        if sense_food and self.has_food:
-            a = self.state.clone()
-            a[:,0:1,...] += self.food_channel
-            Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
-        else:
-            Aff = self.kernel_fftconv(self.state)  # (B,C,C,H,W) first step affinity, usual convolutions
-
-        weights = self.weights[..., None, None]  # (B,C,C,1,1)
-        Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
-
-        return Aff
-
-    @property
-    def temp(self):
-        return self._temp
-
-    @temp.setter
-    def temp(self, value):
-        self._temp = value
 
     def process_event(self, event, camera=None):
         """
-        PLUS/MINUS -> Show next/previous batch
+        LEFT/RIGHT: change alpha
         """
         super().process_event(event, camera)
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_UP:
-                self.temp += 0.2
-            if event.key == pygame.K_DOWN:
-                self.temp -= 0.2
-            if event.key == pygame.K_KP_PLUS or event.key == pygame.K_PLUS:
-                self.update_show_batch(1)
-            if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
-                self.update_show_batch(-1)
             if event.key == pygame.K_LEFT:
                 self.alpha -= 0.02
                 self.params['alpha'] = self.alpha
@@ -196,50 +100,3 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
     def get_string_state(self):
         return super().get_string_state()+f"alpha: {self.alpha:.2f}"
     
-    def random_food_chan(self, num_spots=100, food_size=5, add_to_exisitng = False,  channels= []):
-        """
-            Returns a food channel with num_spots of food of size food_size
-            Args :
-                num_spots : int, number of food spots
-                food_size : int, size of the food spots
-            
-            Returns :
-                food_chan : tensor, (B,1,H,W) food channel
-        """
-        places = [[random.randint(food_size, self.h - food_size), random.randint(food_size, self.w - food_size)] for _ in
-                  range(num_spots)]
-
-        if add_to_exisitng:
-            food_chan = self.food_channel.clone()
-        else:
-            food_chan = torch.zeros((self.batch, 1, self.h, self.w), device=self.device)
-        for place in places:
-            if add_to_exisitng:
-                food_chan[channels, :, place[0] - food_size: place[0] + food_size,
-                place[1] - food_size:place[1] + food_size] = 1
-
-            else:
-                food_chan[:,:,place[0] - food_size: place[0] + food_size, place[1] - food_size:place[1] + food_size] = 1
-        
-        return food_chan
-
-
-
-    def set_init_fractal(self):
-        super().set_init_fractal()
-        if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
-            self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
-
-    def set_init_perlin(self, wavelength=None):
-        super().set_init_perlin(wavelength)
-        if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
-            self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
-
-    def set_init_circle(self, fractal=False, radius=None):
-        super().set_init_circle(fractal, radius)
-        if self.has_food:
-            self.food_channel = self.random_food_chan() # (B,1, H,W)
-            self.cum_loss_mass = torch.zeros(self.batch, device=self.device)
-

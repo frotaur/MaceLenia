@@ -40,9 +40,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             dt=0.1,
             num_channels=3,
             device=device,
-            has_food=False,
+            has_food=True,
             save_dir="demo_xchanmacelenia",
-            interest_files=(cur_dir / "demo_xchanmacelenia").as_posix(),
+            interest_files=(cur_dir / "evoxchandefault").as_posix(),
         ),
         "Lenia": lambda h, w: MCLenia(
             (1, h, w),

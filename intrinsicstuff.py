@@ -2,7 +2,7 @@ from modules import DiffusionLenia, DiffusionLeniaCrossChannel
 from modules.models.utils import LeniaParams
 from tqdm import tqdm
 import torch
-model = DiffusionLenia(size=(1,800,800), dt=0.1, num_channels=3, device='cuda', has_food=True, save_dir='intrinsic')
+model = DiffusionLeniaCrossChannel(size=(1,800,800), dt=0.1, num_channels=3, device='cuda', has_food=True, save_dir='intrinsic')
 
 def new_params(model, default=True):
     if(not default):
@@ -16,6 +16,7 @@ def new_params(model, default=True):
             k_mult=model.k_mult
         )
     model.update_params(params, k_size_override=None)
+
 @torch.no_grad()
 def run_intrinsic_evo(num_runs=150, default=True):
     for k in tqdm(range(num_runs)):
@@ -35,8 +36,8 @@ def run_intrinsic_evo(num_runs=150, default=True):
                     break
 
         if(not dead):
-            model._save_with_state(path=f'./evodeath{'default' if default else 'random'}')
-            print('Model has survived')
+            model._save_with_state(path=f'./evoxchan{'default' if default else 'random'}')
+            print('Model has survived with ', model.state.sum())
 
-run_intrinsic_evo(num_runs=150, default=True)
-run_intrinsic_evo(num_runs=150, default=False)
+run_intrinsic_evo(num_runs=20, default=True)
+run_intrinsic_evo(num_runs=20, default=False)

@@ -21,6 +21,7 @@ class DiffusionLenia(MCLenia):
         state_init=None,
         device="cpu",
         has_food=False,
+        sense_food=False,
         interest_files=None,
         save_dir=".",
     ):
@@ -35,6 +36,7 @@ class DiffusionLenia(MCLenia):
         """
         self.has_food = has_food # Needed for initialization
         self.initial_food = 10000
+        self.sense_food = sense_food
         super().__init__(
             size,
             dt,
@@ -57,23 +59,48 @@ class DiffusionLenia(MCLenia):
         self.smear_kernel = torch.ones((1,1,kernel_size,kernel_size), device=self.device)/(kernel_size*kernel_size) # (1,1,kernel_size,kernel_size)
 
 
-    def step(self, sense_food = False):
+    def step(self, sense_food = None):
         """
         Steps the alife model by one time step
-        """
 
+        Args: sense_food: overrides self.sense_food, if True, the model will sense food
+        """
+        if sense_food is not None:
+            self._mace_step(sense_food=sense_food)
+        else:
+            self._mace_step(sense_food=self.sense_food)
+
+        if self.has_food:
+            self._food_step()
+
+    def _mace_step(self,sense_food = False):
+        """
+            Performs the Mace Step of the model,
+            and returns the affinity tensor
+
+            Args:
+                sense_food : bool, if True, the model will sense food
+                and update the affinity tensor accordingly
+            Returns:
+                Aff : tensor, affinity tensor of the model
+        """
         B,C,H,W = self.state.shape
 
         Aff = self.compute_affinity(sense_food=sense_food) # (B,C,H,W) affinity matrix
-        Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        expAff = torch.exp(self.temp * Aff)
+
+        Z = F.pad(expAff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
         Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
         Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
 
         state_portions = self.state/Z
         state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
         state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W)
-        self.state = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
+        self.state = (expAff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
 
+        return Aff
+
+    def _food_step(self):
         if self.has_food:
             food_amount = 200
             # Decay proportionally to mass, but with a minimum rate
@@ -92,9 +119,6 @@ class DiffusionLenia(MCLenia):
                 self.food_channel = self.random_food_chan(food_amount=food_amount,num_spots=1,food_size=7,add_to_exisitng=True,channels=update_idxs)
 
             self.update_food(min_density = 0.05,transfer_rate=0.06, death_enabled=False)
-
-
-
 
     def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
         """uncomment the death sections for death mechanics, but its finicky and i dont like it """
@@ -143,8 +167,6 @@ class DiffusionLenia(MCLenia):
             food_aff = food_aff + self.kernel_fftconv(food_aff).sum(dim=1) # (B,1,H,W) food channel
             # Hardcoded for now, but remove affinity when matter is too low, so it cant eat
             Aff = Aff + (food_aff)#*(self.state>0.05) # (B,C,H,W) food affinity
-
-        Aff = torch.exp(self.temp * Aff)
 
         return Aff
 
