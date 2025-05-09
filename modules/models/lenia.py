@@ -10,10 +10,9 @@ from .utils.funcgen import ArbitraryFunction
 from copy import deepcopy
 
 
-class MCLenia(DevModule, Automaton):
+class Lenia(DevModule, Automaton):
     """
-    Batched Multi-channel lenia, to run batch_size worlds in parallel !
-    Does not support live drawing in pygame, maybe will later.
+    Batched Multi-channel lenia, to run batch_size worlds in parallel!
     """
 
     def __init__(
@@ -74,7 +73,7 @@ class MCLenia(DevModule, Automaton):
         self.register_buffer("state", torch.rand((self.batch, self.C, self.h, self.w)))
 
         if state_init is None:
-            self.set_init_fractal()  # Fractal perlin init
+            self.set_init_circle()
         else:
             self.state = state_init.to(self.device)  # Specific init
 
@@ -111,11 +110,12 @@ class MCLenia(DevModule, Automaton):
 
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
-        Updates parameters of the automaton.
+        Updates the Lenia parameters (carefully).
         Changes batch size to match the one of provided params (take mu as reference)
 
         Args:
             params : LeniaParams
+            k_size_override : int, if provided, will override the kernel size stored in params
         """
         if isinstance(params, LeniaParams):
             params = params.param_dict
@@ -169,7 +169,10 @@ class MCLenia(DevModule, Automaton):
 
     def resize(self, new_size):
         """
-            Recomputes fft_kernel for it to work
+            Resizes the automaton world, and recomputes the fft_kernel to match.
+
+            Args:
+                new_size : (B,H,W) of ints, new size of the automaton and number of batches
         """
         super().resize(new_size)
         self.k = self.compute_kernel()
@@ -206,6 +209,13 @@ class MCLenia(DevModule, Automaton):
         )
 
     def set_init_circle(self, fractal=False, radius=None):
+        """
+            Creates a circle of perlin noise in the center of the world.
+
+            Args:
+                fractal : bool, whether to use fractal perlin noise or not
+                radius : int, radius of the circle. If None, will be set to 3*k_size
+        """
         if radius is None:
             radius = self.k_size * 3
         if fractal:
@@ -260,8 +270,9 @@ class MCLenia(DevModule, Automaton):
     def compute_kernel(self):
         """
         Computes the kernel given the current parameters. Uses in priority
-        arbitrary function if provided, else uses the standard way.
+        random fourier function if parameters are provided, else uses the standard way.
 
+        Returns : Tensor of shape (B,C,C,k_size,k_size), the full set of kernels
         """
         xyrange = torch.linspace(-1, 1, self.k_size).to(self.device)
 
@@ -305,6 +316,12 @@ class MCLenia(DevModule, Automaton):
         return K  # (B,C,C,k_size,k_size)
 
     def kernel_to_fft(self, K):
+        """
+            Computed the fft of the kernel correctly padded to compute convolutions with the world.
+
+            Args:
+                K : (B,C*k_mult,C,k_size,k_size), kernel to compute the fft of
+        """
         # Pad kernel to match image size
         # For some reason, pad is left;right, top;bottom, (so W,H)
         K = F.pad(K, [0, (self.w - self.k_size)] + [0, (self.h - self.k_size)])  # (B,C*k_mult,C,h,w)
@@ -319,7 +336,9 @@ class MCLenia(DevModule, Automaton):
     def compute_growth(self):
         """
         Constructs the growth function given current parameters.
-        By default, uses the ArbitraryFunction way if the necessary parameters are defined
+        By default, uses random fourier sampling if the necessary parameters are defined
+
+        Returns : callable, growth function that takes as input the result of the convolution (B,C*k_mult,C,H,W)
         """
 
         if self.g_arbi:
@@ -365,7 +384,7 @@ class MCLenia(DevModule, Automaton):
     @torch.no_grad()
     def step(self):
         """
-        Steps the automaton state by one iteration.
+         Performs one step of the Lenia update.
         """
 
         U = self.kernel_fftconv(self.state)  # (B,C*k_mult,C,H,W)
@@ -385,7 +404,10 @@ class MCLenia(DevModule, Automaton):
 
     def kernel_fftconv(self, state):
         """
-        Compute convolution using fft_kernel
+            Compute convolution with the state using the fft kernel.
+
+            Args:
+                state : (B,C*k_mult,C,H,W), state of the automaton
         """
         state = torch.fft.fft2(state)  # (B,C,H,W) fourier transform
         state = state[:, :, None, None, :]  # (B,C,1,1,H,W)
@@ -410,7 +432,7 @@ class MCLenia(DevModule, Automaton):
     @torch.no_grad()
     def draw(self):
         """
-        Draws the RGB worldmap from state.
+        Draws the RGB worldmap from state. Should be called before dislaying the worldmap/worldsurface.
         """
         assert self.state.shape[0] == 1, "Batch size must be 1 to draw"
 
@@ -442,7 +464,7 @@ class MCLenia(DevModule, Automaton):
             ].cpu()
         return image  # (3,H,W)
 
-    def process_event(self, event, camera=None):
+    def process_event(self, event, camera=None): # This method is used to process the pygame events
         """
         N (+ shift) -> New random (truerandom) parameters
         A -> Random params, with arbitrary function (if active)
@@ -545,7 +567,7 @@ class MCLenia(DevModule, Automaton):
             if event.key == pygame.K_DELETE | pygame.K_BACKSPACE:
                 self.state = torch.zeros_like(self.state)
             if event.key == pygame.K_t:
-                # Modify it when testing
+                # Just used for random test, anything can go here
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     self.k_mult -= 1
                     if(self.k_mult < 1):
@@ -564,33 +586,7 @@ class MCLenia(DevModule, Automaton):
                     g_coeffs=3,
                     g_clip=-0.5
                 )
-                self.update_params(params, k_size_override=None)
-                # if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                #     self.growth = self.compute_growth()  # growth function, callable
-                # else:
-                #     params = LeniaParams.exp_decay_gen(
-                #         batch_size=self.batch, 
-                #         num_channels=self.C, 
-                #         device=self.device, 
-                #         k_size=31,
-                #         k_arbi=self.k_arbi,
-                #         g_arbi=self.g_arbi,
-                #         k_decay=.5,
-                #         k_harmo_start=1,
-                #         g_decay=.1,
-                #         g_harmo_start=1,
-                #         k_coeffs=5,
-                #         k_rescale=(-0.7,1.),
-                #         g_coeffs=3,
-                #         g_clip=-0.3,
-                #         )
-                #     self.update_params(params, k_size_override=None)           
-
-                # else:
-                #     params = LeniaParams.fourier_range_gen(batch_size=self.batch, num_channels=self.C, device=self.device, k_size=31,
-                #                                         k_arbi=self.k_arbi, g_arbi=self.g_arbi, k_harmonics=torch.tensor([1.5,2.]),
-                #                                         k_rescale=(-1,.8),g_harmonics=torch.tensor([1.,2.,3.,4.,5.,6.]), g_rescale=(-1.,1.),g_clip=-0.3)
-                    # self.update_params(params, k_size_override=None)           
+                self.update_params(params, k_size_override=None)      
 
     def compute_ker(self, batch=0):
         """
@@ -616,6 +612,9 @@ class MCLenia(DevModule, Automaton):
     def _save_with_state(self, path):
         """
         Saves the parameters of the automaton ALONG with the current state.
+
+        Args: 
+            path : str, folder to save the parameters to
         """
         path = Path(path) / "state_saves"
         path.mkdir(parents=True, exist_ok=True)
@@ -625,6 +624,12 @@ class MCLenia(DevModule, Automaton):
         to_save.save_indiv(path, batch_name=True, annotation=["_state"])
 
     def _save(self, path):
+        """
+        Saves the parameters of the automaton to the given path.
+
+        Args:
+            path : str, folder to save the parameters to
+        """
         to_save = deepcopy(self.params)
         to_save['g_arbi'] = self.g_arbi
         to_save['k_arbi'] = self.k_arbi
@@ -632,7 +637,7 @@ class MCLenia(DevModule, Automaton):
         to_save.save_indiv(path, batch_name=False)
 
     def _load_state(self, state):
-        """ "
+        """ 
         Loads a state into the automaton, without breaking
         if the provided state has a different shape than the automaton
         """
@@ -673,6 +678,9 @@ class MCLenia(DevModule, Automaton):
         return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi}"
 
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:
+    """
+        Creates a smooth circular mask for the provided batched image tensor. Used to 'cut' the kernel in a circle.
+    """
     H, W = tensor.shape[-2], tensor.shape[-1]
     center_y = (H - 1) / 2  # Allow fractional center for better smoothness
     center_x = (W - 1) / 2

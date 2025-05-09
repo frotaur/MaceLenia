@@ -1,9 +1,9 @@
-from.diffusion_lenia import DiffusionLenia
+from.mace_lenia import MaCELenia
 import torch.nn.functional as F
 import pygame
 
 
-class AsymptoticDiffusionLenia(DiffusionLenia):
+class AsymptoticMaCELenia(MaCELenia):
     """ 
     Like diffusion lenia, but keeps track of dx, dt s.t. it has
     a well-defined continuous limit, both in t and x.
@@ -84,7 +84,7 @@ class AsymptoticDiffusionLenia(DiffusionLenia):
                 self.dt = factor * self.dx**2
                 self.update_params(self.params)
        
-    process_event.__doc__ = DiffusionLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = MaCELenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )
     def get_string_state(self):

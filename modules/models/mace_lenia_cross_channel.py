@@ -4,12 +4,12 @@ from nltk.downloader import update
 from numpy.ma.core import minimum
 from sympy.abc import alpha
 
-from . import DiffusionLenia
-from ..models.utils.torch_utils import unfold3d
-from .lenia import MCLenia
+from .mace_lenia import MaCELenia
+from .utils.torch_utils import unfold3d
+from .lenia import Lenia
 import random
 
-class DiffusionLeniaCrossChannel(DiffusionLenia):
+class MaCELeniaCrossChannel(MaCELenia):
     """
     Mass conserving Lenia-like Alife model
     """
@@ -92,7 +92,7 @@ class DiffusionLeniaCrossChannel(DiffusionLenia):
                 self.alpha += 0.02
                 self.params['alpha'] = self.alpha
 
-    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = Lenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 

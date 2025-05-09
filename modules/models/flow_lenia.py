@@ -1,6 +1,6 @@
 import torch, torch.nn, torch.nn.functional as F
 import pygame
-from .lenia import MCLenia
+from .lenia import Lenia
 import random
 
 
@@ -86,7 +86,7 @@ class ReintegrationTracker():
 
         return ngrid.sum(dim=0)
 
-class FlowLenia(MCLenia):
+class FlowLenia(Lenia):
     """ Pytorch port of mass conserving FlowLenia"""
     def __init__(self, size,
         dt,
@@ -193,7 +193,7 @@ class FlowLenia(MCLenia):
                 self.sigma_rt -= 0.02
                 self.rt.sigma = self.sigma_rt
 
-    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = Lenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 

@@ -1,18 +1,14 @@
-import torch, torch.nn, torch.nn.functional as F
+import torch, torch.nn.functional as F
 import pygame
 from nltk.downloader import update
-
-from .diffusion_lenia_cross_channel import DiffusionLeniaCrossChannel
-from .lenia import MCLenia
 import random
-import showtens
-from .utils.leniaparams import LeniaParams, BatchParams
-from .. import DiffusionLenia
+from .utils.leniaparams import LeniaParams
+from .mace_lenia import MaCELenia
 import itertools
 import math
 
-class EvolvableDiffusionLenia(DiffusionLenia):
-    """ An evolvable version of DiffusionLenia"""
+class EvolvableMaCELenia(MaCELenia):
+    """ An evolvable version of MaCELenia"""
 
     def __init__(
             self,
@@ -26,17 +22,6 @@ class EvolvableDiffusionLenia(DiffusionLenia):
             interest_files=None,
             save_dir=".",
     ):
-        """
-        Args:
-            size : tuple, (B,H,W) size of the automaton
-            dt : float, time step size
-            num_channels : int, number of channels
-            params : dict, parameters of the automaton
-            state_init : tensor, initial state of the automaton
-            device : str, device to use
-        """
-
-
         super().__init__(
             size,
             dt,
@@ -222,6 +207,6 @@ class EvolvableDiffusionLenia(DiffusionLenia):
                 self.manual_evolution = not self.manual_evolution
                 self.show_all_override = self.manual_evolution
 
-    process_event.__doc__ = DiffusionLeniaCrossChannel.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = MaCELenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event

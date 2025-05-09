@@ -1,13 +1,11 @@
-import torch, torch.nn, torch.nn.functional as F
+import torch, torch.nn.functional as F
 import pygame
-from nltk.downloader import update
-from numpy.ma.core import minimum
 import showtens
-from .lenia import MCLenia
+from .lenia import Lenia
 import random
-import math, time
+import math
 
-class DiffusionLenia(MCLenia):
+class MaCELenia(Lenia):
     """
     Mass conserving Lenia-like Alife model
     """
@@ -214,7 +212,7 @@ class DiffusionLenia(MCLenia):
 
 
 
-    process_event.__doc__ = MCLenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
+    process_event.__doc__ = Lenia.process_event.__doc__.rstrip("\n") + process_event.__doc__.lstrip(
         "\n"
     )  # Hack to append the docstring of MCLenia.process_event
 
@@ -293,18 +291,6 @@ class DiffusionLenia(MCLenia):
                 toshow = self._draw_kernel(toshow)
 
             self._worldmap = torch.clamp(toshow, 0., 1.)
-
-
-            # display grayscale where the kernel is big
-            # conv = self.kernel_fftconv(self.state)  # (B,C,C,H,W)
-            # whitepix = torch.any(torch.any((conv[0] > 2.0),dim=0),dim=0)  # (H,W)
-            # self._worldmap[:,whitepix] = 0.4  # (3,H,W)
-            # superwhite = torch.any(torch.any((conv[0] > 3.0),dim=0),dim=0)  # (H,W)
-            # self._worldmap[:,superwhite] = 0.6
-            # supersuperwhite = torch.any(torch.any((conv[0] > 4.0),dim=0),dim=0)  # (H,W)
-            # self._worldmap[:,supersuperwhite] = 0.8
-            # superduperwhite = torch.any(torch.any((conv[0] > 5.0),dim=0),dim=0)  # (H,W)
-            # self._worldmap[:,superduperwhite] = 1.0
 
 
         else:

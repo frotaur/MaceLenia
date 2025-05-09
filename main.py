@@ -9,8 +9,8 @@ from pathlib import Path
 import pygame_chart as pyc
 import torch
 
-from modules.models.diffusion_lenia_cross_channel import DiffusionLeniaCrossChannel
-from modules.models.evolvable_diffusion_lenia import EvolvableDiffusionLenia
+from modules.models.mace_lenia_cross_channel import MaCELeniaCrossChannel
+from modules.models.evolvable_mace_lenia import EvolvableMaCELenia
 from modules.models.flow_lenia import FlowLenia
 
 cur_dir = Path(__file__).parent
@@ -26,16 +26,16 @@ pygame.init()
 def gameloop(screen: tuple[int], world: tuple[int], device: str):
     # Define available automaton classes
     automaton_options = {
-        "DiffusionLenia": lambda h, w: DiffusionLenia(
+        "MaCELenia": lambda h, w: MaCELenia(
             (1, h, w),
             dt=0.1,
             num_channels=3,
             device=device,
-            has_food=True,
+            has_food=False,
             save_dir="demo_macelenia",
             interest_files=(cur_dir / "demo_macelenia").as_posix(),
         ),
-        "DiffusionLeniaCrossChannel": lambda h, w: DiffusionLeniaCrossChannel(
+        "DiffusionLeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
             (1, h, w),
             dt=0.1,
             num_channels=3,
@@ -44,7 +44,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             save_dir="demo_xchanmacelenia",
             interest_files=(cur_dir / "evoxchandefault").as_posix(),
         ),
-        "Lenia": lambda h, w: MCLenia(
+        "Lenia": lambda h, w: Lenia(
             (1, h, w),
             dt=0.1,
             num_channels=3,
@@ -61,10 +61,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             device=device,
             has_food=True,
         ),
-        "AsymptoticDiffLenia": lambda h, w: AsymptoticDiffusionLenia(
+        "AsymptoticDiffLenia": lambda h, w: AsymptoticMaCELenia(
             size=(1,h, w), device=device, interest_files=(cur_dir / "demo_params").as_posix(), save_dir='saved_diff_lenia'
         ),
-        "EvolvableDiffusionLenia": lambda h, w: EvolvableDiffusionLenia(
+        "EvolvableDiffusionLenia": lambda h, w: EvolvableMaCELenia(
             (4, h, w),
             dt=0.1,
             num_channels=3,
@@ -110,7 +110,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     writer = None
 
     # Then when initializing the first automaton:
-    initial_automaton = "DiffusionLenia"
+    initial_automaton = "MaCELenia"
     auto = automaton_options[initial_automaton](H, W)
 
     description, help_text = auto.get_help()
@@ -252,7 +252,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         width=input_width,
         height=input_height,
         font=font,
-        label="FPS",
+        label="Target FPS",
         initial_value=fps,
         margin=margin,
         index=2,
