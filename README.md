@@ -67,7 +67,7 @@ Finally, on the bottom right there is a dropdown menu to select the different av
 
 *To skim nice dynamics, we recommend cycling throught the saved parameters with `M` on `MaCELenia` and `MaCELeniaCrossChannel` (and re-initialize with 'O'), and potentially trying random parameters using `N` and `A`.*
 ## Code structure
-This repository builds on top of [PyCA](https://github.com/frotaur/PyCA), for more information one can follow the tutorial linked in PyCA's README. Here, we briefly go over the code structure, and chiefly where the MaCE rule is implemented. Main files that could be of interest are marked with 🔴. All files marked with the sign have been extensively documented, and we have made effort so the code is as readable and understandable as possible.
+Here, we briefly go over the code structure, and chiefly where the MaCE rule is implemented. Main files that could be of interest are marked with 🔴. All files marked with the sign have been extensively documented, and we have made effort so the code is as readable and understandable as possible.
 
 ```
 DiffusionLenia/
@@ -77,12 +77,13 @@ DiffusionLenia/
 ├── 🔴 intrinsicruns.py           # Script to run intrisic evolution experiments
 ├── modules/                   # All automata and utilities in here
 │   ├── models/                # Base automaton classes and interfaces
-│   │   ├── 🔴 MaCELenia.py          # Implementation of the MaCELenia model
-│   │   ├── 🔴 MaCELeniaCrossChannel.py # Cross-channel extension of MaCELenia
-│   │   ├── AsymptoticMaCELenia.py   # MaCELenia with discretization parameters
-│   │   ├── EvolvableMaCELenia.py    # Experimental evolution framework
-│   │   ├── 🔴 Lenia.py              # Standard Lenia implementation
-│   │   ├── FlowLenia.py             # FlowLenia implementation
+│   │   ├── automaton.py            # Base class, all implemented automata inherit from it
+│   │   ├── 🔴 lenia.py              # Standard Lenia implementation, on which we build the MaCE update
+│   │   ├── 🔴 mace_lenia.py          # Implementation of the MaCELenia model
+│   │   ├── 🔴 mace_lenia_cross_channel.py # Cross-channel extension of MaCELenia
+│   │   ├── asymp_mace_lenia.py   # MaCELenia with discretization parameters
+│   │   ├── evolvable_mace_lenia.py    # Experimental evolution framework
+│   │   ├── flow_lenia.py             # FlowLenia implementation
 │   │   └── utils/                   # Utilities used by models, such as the LeniaParam class, and random fourier function generation 
 │   │        ├── 🔴 leniaparams.py      # All utility for generating random lenia parameters is here. Extensively documented, but dense.
 │   │        ├── 🔴 funcgen.py          # Utility for generating functions sampled with random fourier coefficients. Document, but dense.

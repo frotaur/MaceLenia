@@ -95,7 +95,7 @@ class EvolvableMaCELenia(MaCELenia):
 
     def p2p_crossover(
         self, parent_params: LeniaParams, parent_mutation_params: dict, num_parents: int, num_children: int
-    ) -> (LeniaParams, dict):
+    ) -> tuple[LeniaParams, dict]:
         new_pop = parent_params
         for i in range(num_children):
             child = {}
