@@ -13,7 +13,7 @@ class MaCELenia(Lenia):
     def __init__(
         self,
         size,
-        dt,
+        dt=0.1,
         num_channels=3,
         params=None,
         state_init=None,
@@ -26,7 +26,7 @@ class MaCELenia(Lenia):
         """
         Args:
             size : tuple, (B,H,W) size of the automaton
-            dt : float, time step size
+            dt : float, unused in this version of MaCELenia, but useful for the asymptotic version
             num_channels : int, number of channels
             params : dict, parameters of the automaton
             state_init : tensor, initial state of the automaton
@@ -37,17 +37,17 @@ class MaCELenia(Lenia):
         self.sense_food = sense_food
         super().__init__(
             size,
-            dt,
-            num_channels,
-            params,
-            state_init,
+            dt=dt, # dt does not matter this MaCE update
+            num_channels=num_channels,
+            params=params,
+            state_init=state_init,
             device=device,
             interest_files=interest_files,
             save_dir=save_dir,
         )
 
-        self._temp = 8
-        self.Aff = self.compute_affinity()
+        self._beta = 8
+        self.Aff = self._compute_affinity()
         self.show_batch = 0
         self.cum_loss_mass = torch.zeros(self.batch, device=device)
         self.show_all = False
@@ -64,62 +64,125 @@ class MaCELenia(Lenia):
         Args: sense_food: overrides self.sense_food, if True, the model will sense food
         """
         if sense_food is not None:
-            self._mace_step(sense_food=sense_food)
+            self._mace_step(sense_food=sense_food) 
         else:
+            # Perform the MaCE step, computing affinity and redistributing mass
             self._mace_step(sense_food=self.sense_food)
 
         if self.has_food:
+            # If food is active, we perform the decay and mass redistribution step
             self._food_step()
 
     def _mace_step(self,sense_food = False):
+            """
+                Performs the Mace Step of the model,
+                and returns the affinity tensor for potential further use.
+
+                Args:
+                    sense_food : bool, if True, the model will sense food
+                    and update the affinity tensor accordingly
+                Returns:
+                    Aff : (B,C,H,W), affinity tensor of the model
+            """
+            B,C,H,W = self.state.shape
+
+            # Compute affinity with growth function of Lenia
+            Aff = self._compute_affinity(sense_food=sense_food) # (B,C,H,W) affinity matrix
+            expAff = torch.exp(self.b * Aff) # Exponentiate with beta
+
+            # Unfold expAff to prepare the computation of normalization Z
+            Z = F.pad(expAff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+            Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+            Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization tensor
+
+            to_give = self.state/Z # normalized mass, ready to be portioned according to the expAff
+            to_give = F.pad(to_give, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+            to_give = F.unfold(to_give, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W), unfold again to distribute mass to all 9 neighbors
+            self.state = (expAff[:,:,None]*to_give).sum(dim=2) # (B,C,H,W) result of the redistribution of mass
+
+            return Aff # (B,C,H,W), return affinity if needed later (e.g. for cross channel step)
+
+    def _compute_affinity(self, sense_food = False):
         """
-            Performs the Mace Step of the model,
-            and returns the affinity tensor
+        Computes the affinity tensor of the model, using the Lenia way of computing the growth value.
+        With sense_food, the food will alter the affinity value to increase it if it's present in one of the kernels.
 
-            Args:
-                sense_food : bool, if True, the model will sense food
-                and update the affinity tensor accordingly
-            Returns:
-                Aff : tensor, affinity tensor of the model
+        Args:
+            sense_food : bool, if True, the model will sense food
+            and update the affinity tensor accordingly
+        Returns:
+            Aff : (B,C,H,W) tensor, affinity
         """
-        B,C,H,W = self.state.shape
+        ### Alternative way of sensing food : adding food channel to the red channel of the state
+        ### This makes it so sometimes, matter is repelled by food, so its a selection process on the parameters
+        ## --------------------------------------------------------------------------- ##
+        # if sense_food and self.has_food:
+            # a = self.state.clone()
+            # a[:,0:1,...] += self.food_channel # Add food channel to the state 'r' channel, for sensing
+            # Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
+        # else:
+        #     Aff = self.kernel_fftconv(self.state)
+        ## --------------------------------------------------------------------------- ##
 
-        Aff = self.compute_affinity(sense_food=sense_food) # (B,C,H,W) affinity matrix
-        expAff = torch.exp(self.temp * Aff)
+        Aff = self.kernel_fftconv(self.state) # Compute the convolution of Lenia kernel with the state, (B,C,C,H,W)
+        weights = self.weights[..., None, None]  # (B,C,C,1,1)
+        Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) Proper affinity, by applying growth function and summing contributions
+        
+        if(self.has_food and sense_food): # Comment this if using alternative sensing (above)
+            food_aff = (self.food_channel>0).float().expand(-1, self.C, -1, -1) # (B,1,H,W) food channel
+            # Optional : increase affinity according also to how much food is sensed
+            food_aff = food_aff + self.kernel_fftconv(food_aff).sum(dim=1) # (B,1,H,W) food channel
+            # Hardcoded for now, but remove affinity when matter is too low, so it cant eat
+            Aff = Aff + (food_aff) # (B,C,H,W) food affinity
 
-        Z = F.pad(expAff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
-        Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
+        return Aff # (B,C,H,W) Affinity tensor
 
-        state_portions = self.state/Z
-        state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W)
-        self.state = (expAff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
-
-        return Aff
+    
 
     def _food_step(self):
-        if self.has_food:
-            food_amount = 200
-            # Decay proportionally to mass, but with a minimum rate
-            # alowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0003))
-            # alowable_decay = torch.where(self.state>0.01,self.state*0.0007+torch.full_like(self.state,0.02*0.0005), torch.zeros_like(self.state))
-            
-            allowable_decay = torch.where(self.state>0.005,0.0003, torch.zeros_like(self.state))
-            self.state = (self.state  - allowable_decay)  # Update the state by subtracting the allowable decay
-            # Compute all mass lost, when above some threshold, reintroduce the mass as food
-            self.cum_loss_mass+= (allowable_decay).view(self.batch, -1).sum(dim = 1)
-            update_idxs = torch.argwhere(self.cum_loss_mass >= food_amount).tolist()
-            update_idxs = [p[0] for p in update_idxs]
+        """
+            Performs the mass decay, food eating and food generation step. Updates self.state.
+            Lots of things were tried here, unclear what's the best way to decay/consume/redistribute food
+            to promote intrisinc competition in an equilibrated way! Experiment at will.
+        """
+        if self.has_food: # Only do something if food is active
+            self._decay_and_distribute() # Decay the state and redistribute the mass to the food
 
-            if update_idxs:
-                self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - food_amount
-                self.food_channel = self.random_food_chan(food_amount=food_amount,num_spots=1,food_size=7,add_to_exisitng=True,channels=update_idxs)
+            self._consume_food(min_density = 0.05,transfer_rate=0.06, death_enabled=False)
 
-            self.update_food(min_density = 0.05,transfer_rate=0.06, death_enabled=False)
+    def _decay_and_distribute(self):
+        """
+            Decays the state and redistributes the mass to the food channel.
+        """
+        food_amount = 200 # Amount of food redistributed per step
 
-    def update_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
-        """uncomment the death sections for death mechanics, but its finicky and i dont like it """
+        # --- Decay 1 --- Exponential decay + small constant decay. Quite harsh, work best with full window initialization
+        # allowable_decay = torch.minimum(self.state, self.state*0.003 + torch.full_like(self.state, 0.0003))
+        # --- Decay 2 --- Same as before, but with a minimal value. Allows for a thin 'veil' of mass to spread, which helps solitons move around
+        # allowable_decay = torch.where(self.state>0.01,self.state*0.0007+torch.full_like(self.state,0.02*0.0005), torch.zeros_like(self.state))
+        # --- Decay 3 --- Constant decay. Encourages more high concentrations, as proportionally they decay slower
+        allowable_decay = torch.where(self.state>0.005,0.0003, torch.zeros_like(self.state))
+
+        self.state = (self.state  - allowable_decay)  # Update the state by subtracting the allowable decay
+
+        # Compute all mass lost, when above some threshold, reintroduce the mass as food
+        # Must be careful not to couple different batches, as its different worlds
+        self.cum_loss_mass+= (allowable_decay).view(self.batch, -1).sum(dim = 1)
+        update_idxs = torch.argwhere(self.cum_loss_mass >= food_amount).tolist()
+        update_idxs = [p[0] for p in update_idxs]
+
+        if update_idxs: # Each batchs that has lost more than food_amount gets a redistribution
+            self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - food_amount
+            self.food_channel = self.random_food_chan(food_amount=food_amount,num_spots=1,food_size=7,add_to_exisitng=True,batches=update_idxs)
+
+    def _consume_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
+        """
+            Performs the food consumption step, where food is eaten and transferred to the state.
+            <EXPERIMENTAL> : With death_enabled = true, it also performs a state decay, which can
+            turn into food. This can be turned on manually in the code, and if so, the _decay_and_distribute
+            step should be removed. Very finicky, hard to stabilize, but can lead to interesting behaviors with
+            lots of effort.
+        """
         where_food = self.food_channel > 0  # Where the food channels are
         where_contact = (self.state.sum(dim=1,keepdim=True) >= min_density)  # Where the eating channel is, we could amke this dynamic, 0.1 is the threshold for eating
 
@@ -143,38 +206,13 @@ class MaCELenia(Lenia):
         self.show_batch = (self.show_batch + dirr) % self.batch
 
 
-
-    def compute_affinity(self, sense_food = False):
-        """
-        Computes the affinity matrix of the model
-        """
-        # if sense_food and self.has_food:
-            # a = self.state.clone()
-            # a[:,0:1,...] += self.food_channel # Add food channel to the state 'r' channel, for sensing
-            # Aff = self.kernel_fftconv(a)  # (B,C,C,H,W) first step affinity, usual convolutions
-        # else:
-        #     Aff = self.kernel_fftconv(self.state)
-
-        Aff = self.kernel_fftconv(self.state)
-        weights = self.weights[..., None, None]  # (B,C,C,1,1)
-        Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
-        
-        if(self.has_food and sense_food):
-            food_aff = (self.food_channel>0).float().expand(-1, self.C, -1, -1) # (B,1,H,W) food channel
-            # Optional : increase affinity according also to how much food is sensed
-            food_aff = food_aff + self.kernel_fftconv(food_aff).sum(dim=1) # (B,1,H,W) food channel
-            # Hardcoded for now, but remove affinity when matter is too low, so it cant eat
-            Aff = Aff + (food_aff)#*(self.state>0.05) # (B,C,H,W) food affinity
-
-        return Aff
-
     @property
-    def temp(self):
-        return self._temp
+    def b(self):
+        return self._beta
 
-    @temp.setter
-    def temp(self, value):
-        self._temp = value
+    @b.setter
+    def b(self, value):
+        self._beta = value
 
     def process_event(self, event, camera=None):
         """
@@ -183,19 +221,29 @@ class MaCELenia(Lenia):
         PLUS -> Show next batch
         MINUS -> Show previous batch
         B -> Toggle show all batches at once
+        F (+shift) -> Toggle food and decay (+shift toggle food sensing)
         """
         super().process_event(event, camera)
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_UP:
-                self.temp += 0.2
+                self.b += 0.2
             if event.key == pygame.K_DOWN:
-                self.temp -= 0.2
+                self.b -= 0.2
             if event.key == pygame.K_KP_PLUS or event.key == pygame.K_PLUS:
                 self.update_show_batch(1)
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
             if event.key == pygame.K_b:
-                self.show_all = not self.show_all
+                self.show_all = not self.show_al
+            if event.key == pygame.K_f:
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.sense_food = not self.sense_food
+                else:
+                    self.has_food = not self.has_food
+                    if(self.has_food):
+                        self.food_channel = self.random_food_chan(food_amount=self.initial_food)
+                    else:
+                        self.food_channel = torch.zeros_like(self.food_channel)
 
         mouse_state = self.get_mouse_state(camera)
         if(mouse_state.left or mouse_state.right):
@@ -217,15 +265,24 @@ class MaCELenia(Lenia):
     )  # Hack to append the docstring of MCLenia.process_event
 
     def get_string_state(self):
-        return super().get_string_state()+f"tot mass: {self.total_mass():.2f}, live: {self.state.sum():.2f} temp : {self.temp:.2f}, Showing Batch: {self.show_batch}"
-    
-    def random_food_chan(self, food_amount, num_spots=300, food_size=5, add_to_exisitng = False, channels= []):
         """
-            Returns a food channel with num_spots of food of size food_size
+        Returns the info string displayed at the bottom of the window
+        """
+        return super().get_string_state()+f"tot mass: {self.total_mass():.2f}, live: {self.state.sum():.2f} beta : {self.b:.2f}, Showing Batch: {self.show_batch}"
+    
+    def random_food_chan(self, food_amount, num_spots=300, food_size=5, add_to_exisitng = False, batches= []):
+        """
+            Returns a food channel with num_spots of food of size food_size. Can be used to initialize the food,
+            or to add some food to the existing food channel. Given the food amound, the number of spots and the spot size,
+            a food density will be computed, and the food will be added to the food channel.
+
             Args :
+                food_amount : int, amount of food to add
                 num_spots : int, number of food spots
                 food_size : int, size of the food spots
-            
+                add_to_exisitng : bool, if True, the food will be added to the existing food channel, otherwise, resampled from scratch
+                batches : list, indices of the batches to add food to
+
             Returns :
                 food_chan : tensor, (B,1,H,W) food channel
         """
@@ -239,7 +296,7 @@ class MaCELenia(Lenia):
             food_chan = torch.zeros((self.batch, 1, self.h, self.w), device=self.device)
         for place in places:
             if add_to_exisitng:
-                food_chan[channels, :, place[0] - food_size//2: place[0] + food_size//2+1,
+                food_chan[batches, :, place[0] - food_size//2: place[0] + food_size//2+1,
                 place[1] - food_size//2:place[1] + food_size//2+1] = food_density
             else:
                 food_chan[:,:,place[0] - food_size//2: place[0] + food_size//2+1, place[1] - food_size//2:place[1] + food_size//2+1] = food_density

@@ -1,9 +1,13 @@
+easydict
+matplotlib
 nltk
 numpy
 opencv_python
 pygame
+pygame_chart
 pyperlin
 showtens
+sympy
 torch
 torchenhanced
 tqdm

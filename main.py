@@ -32,24 +32,24 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             num_channels=3,
             device=device,
             has_food=False,
-            save_dir="demo_macelenia",
+            save_dir="saved_macelenia",
             interest_files=(cur_dir / "demo_macelenia").as_posix(),
         ),
-        "DiffusionLeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
+        "MaCELeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
             (1, h, w),
             dt=0.1,
             num_channels=3,
             device=device,
-            has_food=True,
-            save_dir="demo_xchanmacelenia",
-            interest_files=(cur_dir / "evoxchandefault").as_posix(),
+            has_food=False,
+            save_dir="saved_xchanmacelenia",
+            interest_files=(cur_dir / "demo_xchanmacelenia").as_posix(),
         ),
         "Lenia": lambda h, w: Lenia(
             (1, h, w),
             dt=0.1,
             num_channels=3,
-            save_dir="demo_lenia",
-            interest_files=(cur_dir / "demo_params").as_posix(),
+            save_dir="saved_lenia",
+            interest_files=(cur_dir / "demo_lenia").as_posix(),
             device=device,
         ),
         "FlowLenia": lambda h, w: FlowLenia(
@@ -57,19 +57,19 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             dt=0.1,
             num_channels=3,
             save_dir="saved_flow_lenia",
-            interest_files=(cur_dir / "demo_params").as_posix(),
+            interest_files=(cur_dir / "demo_macelenia").as_posix(),
             device=device,
-            has_food=True,
+            has_food=False,
         ),
-        "AsymptoticDiffLenia": lambda h, w: AsymptoticMaCELenia(
-            size=(1,h, w), device=device, interest_files=(cur_dir / "demo_params").as_posix(), save_dir='saved_diff_lenia'
+        "AsymptoticMaCELenia": lambda h, w: AsymptoticMaCELenia(
+            size=(1,h, w), device=device, interest_files=(cur_dir / "demo_macelenia").as_posix(), save_dir='saved_macelenia'
         ),
-        "EvolvableDiffusionLenia": lambda h, w: EvolvableMaCELenia(
+        "EvolvableMaCELenia": lambda h, w: EvolvableMaCELenia(
             (4, h, w),
             dt=0.1,
             num_channels=3,
-            save_dir="demo_macelenia",
-            interest_files=(cur_dir / "demo_params").as_posix(),
+            save_dir="saved_macelenia",
+            interest_files=(cur_dir / "demo_macelenia").as_posix(),
             device=device,
             has_food=False,
         ),
@@ -414,7 +414,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
         if not stopped:
-            auto.step(sense_food=True)  # step the automaton
+            auto.step()  # step the automaton
 
 
         auto.draw()  # draw the worldstate
@@ -454,7 +454,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                 mr_input.draw()
                 mm_input.draw()
 
-        display_live_text(auto, font, screen)
+            display_live_text(auto, font, screen)
 
         # Update growth plots
         if display_growth:

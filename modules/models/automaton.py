@@ -1,3 +1,8 @@
+"""
+    This files defines the Automaton class, which is the base class for all cellular automata we implement.
+"""
+
+
 import numpy as np
 import torch
 from textwrap import dedent
@@ -28,6 +33,10 @@ class Automaton:
         self.Y, self.X = torch.meshgrid(y, x, indexing='ij') # (H,W)
 
     def step(self):
+        """
+            This method should be overriden. It should update the CA world
+            according to the rules of the automaton. 
+        """
         return NotImplementedError('Please subclass "Automaton" class, and define self.step')
 
     def draw(self):

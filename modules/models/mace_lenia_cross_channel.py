@@ -48,7 +48,7 @@ class MaCELeniaCrossChannel(MaCELenia):
             save_dir=save_dir,
         )
 
-        self._temp = 6 # default temperature is 6 for this one
+        self._beta = 6 # default temperature is 6 for this one
         self.alpha = 0.03
         self.params['alpha'] = self.alpha
 
@@ -69,7 +69,7 @@ class MaCELeniaCrossChannel(MaCELenia):
     def _cross_chan_step(self,Aff):
         """Performs the cross channel step, given the affinity matrix"""
         max_Aff = torch.max(Aff, dim=1, keepdim=True)[0]
-        Aff_shifted = self.temp*(Aff - max_Aff)
+        Aff_shifted = self.b*(Aff - max_Aff)
         numerator = torch.exp(Aff_shifted)
         Aff_c = numerator / (numerator.sum(dim=1, keepdim=True))
 

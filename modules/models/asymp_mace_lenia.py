@@ -1,6 +1,6 @@
 from.mace_lenia import MaCELenia
 import torch.nn.functional as F
-import pygame
+import pygame, torch
 
 
 class AsymptoticMaCELenia(MaCELenia):
@@ -17,7 +17,7 @@ class AsymptoticMaCELenia(MaCELenia):
         self.dx = dx
         self.dt = dx**2/3 # Maximum dt for stability
 
-        super().__init__(size,self.dt,num_channels,params,state_init,device,False,interest_files,save_dir)
+        super().__init__(size,self.dt,num_channels,params,state_init,device,has_food=False,sense_food=False, interest_files=interest_files,save_dir=save_dir)
 
         print('k_size equivalent dx : ', self.compute_ksize())
         print(f'Set dt={self.dt:.3f}  for stability')
@@ -32,25 +32,38 @@ class AsymptoticMaCELenia(MaCELenia):
         if 'dx' in params:
             self.dx = params['dx']
         super().update_params(params, k_size_override=self.compute_ksize())
-    
-    def step(self):
+
+    def _mace_step(self, sense_food=False):
         """
-        Steps the alife model by one time step
+            Performs the Mace Step of the model, including the dx and dt parameters
+            and returns the affinity tensor for potential further use.
+
+            Args:
+                sense_food : bool, if True, the model will sense food
+                and update the affinity tensor accordingly
+            Returns:
+                Aff : (B,C,H,W), affinity tensor of the model
         """
         B,C,H,W = self.state.shape
-        Aff = self.compute_affinity()
-    
-        Z = F.pad(Aff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
-        Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization
 
-        state_portions = self.state/Z
-        state_portions = F.pad(state_portions, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
-        state_portions = F.unfold(state_portions, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*H*W,9)
+        # Compute affinity with growth function of Lenia
+        Aff = self._compute_affinity(sense_food=sense_food) # (B,C,H,W) affinity matrix
+        expAff = torch.exp(self.b * Aff) # Exponentiate with beta
+
+        # Unfold expAff to prepare the computation of normalization Z
+        Z = F.pad(expAff, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        Z = F.unfold(Z, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C*9,H,W)
+        Z = Z.sum(dim=2) # (B,C,H,W) local affinity normalization tensor
+
+        to_give = self.state/Z # normalized mass, ready to be portioned according to the expAff
+        to_give = F.pad(to_give, (1,1,1,1), mode='circular') # (B,C,H+2,W+2) for the (3,3) kernel
+        to_give = F.unfold(to_give, kernel_size=(3,3)).reshape(B,C,9,H,W) # (B,C,9,H,W), unfold again to distribute mass to all 9 neighbors
         
-        redistribution = (Aff[:,:,None]*state_portions).sum(dim=2) # (B,C,H,W) result of the diffusion
+        redistribution = (Aff[:,:,None]*to_give).sum(dim=2) # (B,C,H,W) result of the diffusion
 
         self.state = self.state + 3*self.dt/(self.dx**2)*(redistribution - self.state)
+        
+        return Aff # (B,C,H,W), return affinity if needed later (e.g. for cross channel step)
 
 
     def process_event(self, event, camera=None):

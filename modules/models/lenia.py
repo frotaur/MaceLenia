@@ -178,7 +178,7 @@ class Lenia(DevModule, Automaton):
         self.k = self.compute_kernel()
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
         self.state = F.interpolate(self.state, size=new_size, mode="bilinear", align_corners=False)
-
+        self.food_channel = F.interpolate(self.food_channel, size=new_size, mode="bilinear", align_corners=False)
     def set_init_fractal(self):
         """
         Sets the initial state of the automaton using fractal perlin noise.
