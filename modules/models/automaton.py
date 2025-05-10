@@ -1,7 +1,6 @@
 """
-    This files defines the Automaton class, which is the base class for all cellular automata we implement.
+This files defines the Automaton class, which is the base class for all cellular automata we implement.
 """
-
 
 import numpy as np
 import torch
@@ -26,16 +25,18 @@ class Automaton:
         self.h, self.w = size
         self.size = size
 
-        self._worldmap = torch.zeros((3, self.h, self.w), dtype=float)  # (3,H,W), contains a 2D 'view' of the CA world
+        self._worldmap = torch.zeros(
+            (3, self.h, self.w), dtype=float
+        )  # (3,H,W), contains a 2D 'view' of the CA world
         # Create meshgrid coordinates
         x = torch.arange(0, self.w, dtype=float)
         y = torch.arange(0, self.h, dtype=float)
-        self.Y, self.X = torch.meshgrid(y, x, indexing='ij') # (H,W)
+        self.Y, self.X = torch.meshgrid(y, x, indexing="ij")  # (H,W)
 
     def step(self):
         """
-            This method should be overriden. It should update the CA world
-            according to the rules of the automaton. 
+        This method should be overriden. It should update the CA world
+        according to the rules of the automaton.
         """
         return NotImplementedError('Please subclass "Automaton" class, and define self.step')
 
@@ -46,10 +47,10 @@ class Automaton:
         If you choose to use another format, you should override the worldmap property as well.
         """
         return NotImplementedError('Please subclass "Automaton" class, and define self.draw')
-    
+
     def process_event(self, event, camera=None):
         """
-        Processes a pygame event, if needed. Should be overriden to 
+        Processes a pygame event, if needed. Should be overriden to
         add interactivity to the automaton.
 
         Parameters:
@@ -59,8 +60,8 @@ class Automaton:
             The camera object. Need for the call to self.get_mouse_state.
         """
         pass
-    
-    def resize(self,new_size):
+
+    def resize(self, new_size):
         """
         Resize the worldmap to a new size. The new size must be a tuple of (H,W).
         """
@@ -69,7 +70,7 @@ class Automaton:
         self._worldmap = torch.zeros((3, self.h, self.w), dtype=float)
         x = torch.arange(0, self.w, dtype=float)
         y = torch.arange(0, self.h, dtype=float)
-        self.Y, self.X = torch.meshgrid(y, x, indexing='ij') # (H,W)
+        self.Y, self.X = torch.meshgrid(y, x, indexing="ij")  # (H,W)
 
     @property
     def worldmap(self):
@@ -83,23 +84,23 @@ class Automaton:
     @property
     def worldsurface(self):
         """
-            Converts self.worldmap to a pygame surface.
+        Converts self.worldmap to a pygame surface.
 
-            Can be overriden for more complex drawing operations, 
-            such as blitting sprites.
+        Can be overriden for more complex drawing operations,
+        such as blitting sprites.
         """
         return pygame.surfarray.make_surface(self.worldmap)
-    
+
     def get_mouse_state(self, camera):
         """
-        Helper function that returns the current mouse state. 
+        Helper function that returns the current mouse state.
         NOTE : All three mouse button will be considered not pressed if CTRL is pressed.
         This is to prevent interactivity to mix with the camera movement, which uses CTRL+mouse buttons.
 
         Args:
         camera : Camera
             The camera object. Needed to convert mouse positions to world coordinates.
-        
+
         Returns: mouse_state, an EasyDict with keys :
             x : x position in the CA world (access also as mouse_state.x)
             y : y position in the CA world (access also as mouse_state.y)
@@ -111,25 +112,26 @@ class Automaton:
         mouse_x, mouse_y = camera.convert_mouse_pos(pygame.mouse.get_pos())
         mods = pygame.key.get_mods()
         ctrl_pressed = mods & (pygame.KMOD_LCTRL | pygame.KMOD_RCTRL)
-        
+
         # If CTRL is pressed, force all mouse buttons to be considered not pressed
         if ctrl_pressed:
             left = middle = right = 0
-        return EasyDict({"x":mouse_x, "y":mouse_y, 'left': left==1, 'right': right==1, 'middle': middle==1})
-
+        return EasyDict(
+            {"x": mouse_x, "y": mouse_y, "left": left == 1, "right": right == 1, "middle": middle == 1}
+        )
 
     def get_help(self):
         doc = self.__doc__
         process = self.process_event.__doc__
-        if(doc is None):
+        if doc is None:
             doc = "No description available"
-        if(process is None):
+        if process is None:
             process = "No interactivity help available"
         return dedent(doc), dedent(process)
 
     def get_string_state(self):
         """
-           Can be overriden to return a string that gives some live information
-           about the model. It is queried each draw call, and displayed on the screen.
+        Can be overriden to return a string that gives some live information
+        about the model. It is queried each draw call, and displayed on the screen.
         """
         return ""

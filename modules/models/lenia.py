@@ -68,7 +68,7 @@ class Lenia(DevModule, Automaton):
             self.params = params
 
         self.k_size = self.params["k_size"]  # kernel size
-        self.k_mult = self.params.param_dict.get('k_mult', 1)  # number of kernels (same for all)
+        self.k_mult = self.params.param_dict.get("k_mult", 1)  # number of kernels (same for all)
 
         self.register_buffer("state", torch.rand((self.batch, self.C, self.h, self.w)))
 
@@ -146,15 +146,18 @@ class Lenia(DevModule, Automaton):
 
         self.batch = self.params.batch_size
 
-
-        if(self.k_arbi and not 'k_harmonics' in self.params):
-            transl_params = self.params.to_arbi_params(lenia_params=self.params, device=self.device) # translate
+        if self.k_arbi and not "k_harmonics" in self.params:
+            transl_params = self.params.to_arbi_params(
+                lenia_params=self.params, device=self.device
+            )  # translate
             self.params["k_harmonics"] = transl_params["k_harmonics"]
             self.params["k_coeffs"] = transl_params["k_coeffs"]
             self.params["k_rescale"] = transl_params["k_rescale"]
-    
-        if(self.g_arbi and not 'g_harmonics' in self.params):
-            transl_params = self.params.to_arbi_params(lenia_params=self.params, device=self.device) # translate
+
+        if self.g_arbi and not "g_harmonics" in self.params:
+            transl_params = self.params.to_arbi_params(
+                lenia_params=self.params, device=self.device
+            )  # translate
             self.params["g_harmonics"] = transl_params["g_harmonics"]
             self.params["g_coeffs"] = transl_params["g_coeffs"]
             self.params["g_rescale"] = transl_params["g_rescale"]
@@ -169,16 +172,19 @@ class Lenia(DevModule, Automaton):
 
     def resize(self, new_size):
         """
-            Resizes the automaton world, and recomputes the fft_kernel to match.
+        Resizes the automaton world, and recomputes the fft_kernel to match.
 
-            Args:
-                new_size : (B,H,W) of ints, new size of the automaton and number of batches
+        Args:
+            new_size : (B,H,W) of ints, new size of the automaton and number of batches
         """
         super().resize(new_size)
         self.k = self.compute_kernel()
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
         self.state = F.interpolate(self.state, size=new_size, mode="bilinear", align_corners=False)
-        self.food_channel = F.interpolate(self.food_channel, size=new_size, mode="bilinear", align_corners=False)
+        self.food_channel = F.interpolate(
+            self.food_channel, size=new_size, mode="bilinear", align_corners=False
+        )
+
     def set_init_fractal(self):
         """
         Sets the initial state of the automaton using fractal perlin noise.
@@ -210,11 +216,11 @@ class Lenia(DevModule, Automaton):
 
     def set_init_circle(self, fractal=False, radius=None):
         """
-            Creates a circle of perlin noise in the center of the world.
+        Creates a circle of perlin noise in the center of the world.
 
-            Args:
-                fractal : bool, whether to use fractal perlin noise or not
-                radius : int, radius of the circle. If None, will be set to 3*k_size
+        Args:
+            fractal : bool, whether to use fractal perlin noise or not
+            radius : int, radius of the circle. If None, will be set to 3*k_size
         """
         if radius is None:
             radius = self.k_size * 3
@@ -254,7 +260,7 @@ class Lenia(DevModule, Automaton):
         # Expand radius to match expected kernel shape
         r = r[None, None, None, None]  # (1,1, 1, 1, k_size, k_size)
         r = r.expand(
-            self.batch, self.C*self.k_mult, self.C, self.mu_k.shape[3], -1, -1
+            self.batch, self.C * self.k_mult, self.C, self.mu_k.shape[3], -1, -1
         )  # (B,C,C,#of rings,k_size,k_size)
 
         mu_k = self.mu_k[..., None, None]  # (B,C,C,#of rings,1,1)
@@ -282,7 +288,7 @@ class Lenia(DevModule, Automaton):
         r = torch.sqrt(X**2 + Y**2)  # (k_size,k_size)
 
         if self.k_arbi:
-            assert 'k_coeffs' in self.params.param_dict, "k_coeffs not in params"
+            assert "k_coeffs" in self.params.param_dict, "k_coeffs not in params"
             harmonics = self.params["k_harmonics"].reshape(
                 self.batch * self.C * self.k_mult * self.C, -1
             )  # (B*C*C,# of harmonics)
@@ -300,7 +306,9 @@ class Lenia(DevModule, Automaton):
                 clips_min=0.0,
                 device=self.device,
             )
-            K = arbi(r[None].expand(self.batch * self.C * self.C * self.k_mult, -1, -1))  # (BCC,k_size,k_size)
+            K = arbi(
+                r[None].expand(self.batch * self.C * self.C * self.k_mult, -1, -1)
+            )  # (BCC,k_size,k_size)
             K = K.reshape(self.batch, self.C * self.k_mult, self.C, self.k_size, self.k_size)
             K = create_smooth_circular_mask(K, self.k_size // 2)
         else:
@@ -317,10 +325,10 @@ class Lenia(DevModule, Automaton):
 
     def kernel_to_fft(self, K):
         """
-            Computed the fft of the kernel correctly padded to compute convolutions with the world.
+        Computed the fft of the kernel correctly padded to compute convolutions with the world.
 
-            Args:
-                K : (B,C*k_mult,C,k_size,k_size), kernel to compute the fft of
+        Args:
+            K : (B,C*k_mult,C,k_size,k_size), kernel to compute the fft of
         """
         # Pad kernel to match image size
         # For some reason, pad is left;right, top;bottom, (so W,H)
@@ -342,7 +350,7 @@ class Lenia(DevModule, Automaton):
         """
 
         if self.g_arbi:
-            assert 'g_coeffs' in self.params.param_dict, "g_coeffs not in params, but g_arbi is True"
+            assert "g_coeffs" in self.params.param_dict, "g_coeffs not in params, but g_arbi is True"
             # Use ArbitraryFunction
             coeffs = self.params["g_coeffs"].reshape(
                 self.batch * self.C * self.k_mult * self.C, -1
@@ -384,7 +392,7 @@ class Lenia(DevModule, Automaton):
     @torch.no_grad()
     def step(self):
         """
-         Performs one step of the Lenia update.
+        Performs one step of the Lenia update.
         """
 
         U = self.kernel_fftconv(self.state)  # (B,C*k_mult,C,H,W)
@@ -404,14 +412,16 @@ class Lenia(DevModule, Automaton):
 
     def kernel_fftconv(self, state):
         """
-            Compute convolution with the state using the fft kernel.
+        Compute convolution with the state using the fft kernel.
 
-            Args:
-                state : (B,C*k_mult,C,H,W), state of the automaton
+        Args:
+            state : (B,C*k_mult,C,H,W), state of the automaton
         """
         state = torch.fft.fft2(state)  # (B,C,H,W) fourier transform
         state = state[:, :, None, None, :]  # (B,C,1,1,H,W)
-        fft_unfolded = self.fft_kernel.reshape(self.batch, self.C, self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,h,w)
+        fft_unfolded = self.fft_kernel.reshape(
+            self.batch, self.C, self.k_mult, self.C, self.h, self.w
+        )  # (B,C*k_mult,C,h,w)
         state = state * fft_unfolded  # (B,C,k_mult,C,H,W), convoluted
         state = state.reshape(self.batch, self.C * self.k_mult, self.C, self.h, self.w)  # (B,C*k_mult,C,H,W)
         state = torch.fft.ifft2(state)  # (B,C*k_mult,C,H,W), back to spatial domain
@@ -427,7 +437,6 @@ class Lenia(DevModule, Automaton):
         """
 
         return self.state.mean(dim=(-1, -2))  # (B,C) mean mass for each color
-
 
     @torch.no_grad()
     def draw(self):
@@ -450,7 +459,7 @@ class Lenia(DevModule, Automaton):
 
         self._worldmap = torch.clamp(toshow, 0.0, 1.0)
 
-    def _draw_kernel(self,image):
+    def _draw_kernel(self, image):
         """
         Draws the kernel on the image.
         """
@@ -458,13 +467,15 @@ class Lenia(DevModule, Automaton):
         horizontal_fit = self.w // self.k_size  # number of kernels that fit in the width
         kern = self.compute_ker()  # (C*k_mult,3,k_size,k_size)
         for i in range(kern.shape[0]):
-            height_offset = i//horizontal_fit+1
-            image[:, self.h - height_offset*self.k_size : self.h - (height_offset-1)*self.k_size, (i%horizontal_fit) * self.k_size : (i%horizontal_fit + 1) * self.k_size] = kern[
-                i
-            ].cpu()
+            height_offset = i // horizontal_fit + 1
+            image[
+                :,
+                self.h - height_offset * self.k_size : self.h - (height_offset - 1) * self.k_size,
+                (i % horizontal_fit) * self.k_size : (i % horizontal_fit + 1) * self.k_size,
+            ] = kern[i].cpu()
         return image  # (3,H,W)
 
-    def process_event(self, event, camera=None): # This method is used to process the pygame events
+    def process_event(self, event, camera=None):  # This method is used to process the pygame events
         """
         N (+ shift) -> New random (truerandom) parameters
         A -> Random params, with arbitrary function (if active)
@@ -482,13 +493,19 @@ class Lenia(DevModule, Automaton):
             if event.key == pygame.K_n:
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     params = LeniaParams.random_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size,
-                        k_mult=self.k_mult
+                        batch_size=self.batch,
+                        num_channels=self.C,
+                        device=self.device,
+                        k_size=self.k_size,
+                        k_mult=self.k_mult,
                     )
                 else:
                     params = LeniaParams.default_gen(
-                        batch_size=self.batch, num_channels=self.C, device=self.device, k_size=self.k_size,
-                        k_mult=self.k_mult
+                        batch_size=self.batch,
+                        num_channels=self.C,
+                        device=self.device,
+                        k_size=self.k_size,
+                        k_mult=self.k_mult,
                     )
                 self.update_params(params, k_size_override=None)
             if event.key == pygame.K_a:
@@ -498,13 +515,13 @@ class Lenia(DevModule, Automaton):
                     device=self.device,
                     k_size=self.k_size,
                     k_mult=self.k_mult,
-                    k_rescale=(-0.5,1),
+                    k_rescale=(-0.5, 1),
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
-                    sigma_size=.3,
+                    sigma_size=0.3,
                     k_coeffs=4,
                     g_coeffs=3,
-                    g_clip=-0.5
+                    g_clip=-0.5,
                 )
                 self.update_params(params, k_size_override=None)
 
@@ -513,25 +530,25 @@ class Lenia(DevModule, Automaton):
                 mutated_params = self.params.mutate(magnitude=0.1, rate=0.8)
                 self.update_params(mutated_params, k_size_override=None)
             if event.key == pygame.K_i:
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     # Intialize with fractal perlin
                     self.set_init_fractal()
-                elif(pygame.key.get_mods() & pygame.KMOD_CTRL):
+                elif pygame.key.get_mods() & pygame.KMOD_CTRL:
                     # Initialize with random wavelength perlin
                     sq_size = random.randint(5, min(self.h, self.w))
                     self.set_init_perlin(wavelength=sq_size)
                 else:
                     self.set_init_perlin()
             if event.key == pygame.K_o:
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
-                    self.set_init_circle(radius=5*self.k_size)
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
+                    self.set_init_circle(radius=5 * self.k_size)
                 else:
                     # Initialize with circle
                     self.set_init_circle(fractal=False)
 
             if event.key == pygame.K_w:
                 # Reroll growth/kernel
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     self.params.reroll_params(kernel=False, arbi=self.g_arbi)
                 else:
                     self.params.reroll_params(kernel=True, arbi=self.k_arbi)
@@ -539,11 +556,11 @@ class Lenia(DevModule, Automaton):
                 self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
 
             if event.key == pygame.K_y:
-                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     self.g_arbi = not self.g_arbi
                 else:
                     self.k_arbi = not self.k_arbi
-                
+
                 self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
             if event.key == pygame.K_m:
                 if self.interest_files:
@@ -570,7 +587,7 @@ class Lenia(DevModule, Automaton):
                 # Just used for random test, anything can go here
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     self.k_mult -= 1
-                    if(self.k_mult < 1):
+                    if self.k_mult < 1:
                         self.k_mult = 1
                 else:
                     self.k_mult += 1
@@ -584,9 +601,9 @@ class Lenia(DevModule, Automaton):
                     g_arbi=self.g_arbi,
                     k_coeffs=4,
                     g_coeffs=3,
-                    g_clip=-0.5
+                    g_clip=-0.5,
                 )
-                self.update_params(params, k_size_override=None)      
+                self.update_params(params, k_size_override=None)
 
     def compute_ker(self, batch=0):
         """
@@ -613,7 +630,7 @@ class Lenia(DevModule, Automaton):
         """
         Saves the parameters of the automaton ALONG with the current state.
 
-        Args: 
+        Args:
             path : str, folder to save the parameters to
         """
         path = Path(path) / "state_saves"
@@ -631,13 +648,13 @@ class Lenia(DevModule, Automaton):
             path : str, folder to save the parameters to
         """
         to_save = deepcopy(self.params)
-        to_save['g_arbi'] = self.g_arbi
-        to_save['k_arbi'] = self.k_arbi
-        
+        to_save["g_arbi"] = self.g_arbi
+        to_save["k_arbi"] = self.k_arbi
+
         to_save.save_indiv(path, batch_name=False)
 
     def _load_state(self, state):
-        """ 
+        """
         Loads a state into the automaton, without breaking
         if the provided state has a different shape than the automaton
         """
@@ -677,9 +694,10 @@ class Lenia(DevModule, Automaton):
     def get_string_state(self):
         return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi}"
 
+
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:
     """
-        Creates a smooth circular mask for the provided batched image tensor. Used to 'cut' the kernel in a circle.
+    Creates a smooth circular mask for the provided batched image tensor. Used to 'cut' the kernel in a circle.
     """
     H, W = tensor.shape[-2], tensor.shape[-1]
     center_y = (H - 1) / 2  # Allow fractional center for better smoothness

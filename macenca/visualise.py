@@ -5,36 +5,42 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from modules.models.utils import torch_utils
 
-#%%
+# %%
 """ Device and Hyperparameters"""
 DEVICE = "cuda:0"
 HEIGHT = 50
 WIDTH = 50
-CHANNELS = 16 #<--- NCA feature channels
+CHANNELS = 16  # <--- NCA feature channels
 HIDDE_DIM = 64
 BATCH_SIZE = 1
-#%%
+
+
+# %%
 def perchannel_conv(x, filters):
     b, ch, h, w = x.shape
     y = x.reshape(b * ch, 1, h, w)
-    y = torch.nn.functional.pad(y, [1, 1, 1, 1], 'circular')
+    y = torch.nn.functional.pad(y, [1, 1, 1, 1], "circular")
     y = torch.nn.functional.conv2d(y, filters[:, None])
     return y.reshape(b, -1, h, w)
 
+
 ident = torch.tensor([[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]], dtype=torch.float32, device=DEVICE)
 ones = torch.tensor([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], dtype=torch.float32, device=DEVICE)
-sobel_x = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], dtype=torch.float32, device=DEVICE)
+sobel_x = torch.tensor(
+    [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], dtype=torch.float32, device=DEVICE
+)
 lap = torch.tensor([[1.0, 2.0, 1.0], [2.0, -12, 2.0], [1.0, 2.0, 1.0]], dtype=torch.float32, device=DEVICE)
 gaus = torch.tensor([[1.0, 2.0, 1.0], [2.0, 4.0, 2.0], [1.0, 2.0, 1.0]], dtype=torch.float32, device=DEVICE)
+
 
 def perception(x):
     filters = torch.stack([sobel_x, sobel_x.T, lap])
     obs = perchannel_conv(x, filters)
-    return torch.cat((x,obs), dim = 1 )
+    return torch.cat((x, obs), dim=1)
 
 
 class MassConservingNCA(torch.nn.Module):
-    def __init__(self,C,hidden_n, device):
+    def __init__(self, C, hidden_n, device):
         super(MassConservingNCA, self).__init__()
         self.C = C
         self.w1 = torch.nn.Conv2d(4 * C, hidden_n, 1)
@@ -48,23 +54,22 @@ class MassConservingNCA(torch.nn.Module):
         b, c, h, w = y.shape
         update_mask = (torch.rand(b, 1, h, w, device=self.device) + update_rate).floor()
 
-        x_normal = x[:,3:,...]
-        x_mass = x[:,:3,...]
+        x_normal = x[:, 3:, ...]
+        x_mass = x[:, :3, ...]
 
-        y_normal = y[:,3:,...]
-        y_mass = y[:,:3,...]
+        y_normal = y[:, 3:, ...]
+        y_mass = y[:, :3, ...]
 
-        Aff = torch.exp(y_mass*0.1)
+        Aff = torch.exp(y_mass * 0.1)
 
         x_mass = self.redistribution(Aff, x_mass)
         x_normal = x_normal + y_normal * update_mask
 
-        x = torch.cat((x_mass, x_normal), dim = 1)
+        x = torch.cat((x_mass, x_normal), dim=1)
 
         return x
 
-    def redistribution(self,Aff,state):
-
+    def redistribution(self, Aff, state):
         B, C, H, W = state.shape
         Aff_exp = F.pad(Aff, (1, 1, 1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
         Aff_exp = torch_utils.unfold3d(Aff_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
@@ -72,13 +77,16 @@ class MassConservingNCA(torch.nn.Module):
         E_exp = F.pad(E, (1, 1, 1, 1, 1, 1), mode="circular")
         E_exp = torch_utils.unfold3d(E_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
         state_exp = F.pad(state, (1, 1, 1, 1, 1, 1), mode="circular")
-        state_exp = torch_utils.unfold3d(state_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
+        state_exp = torch_utils.unfold3d(state_exp, kernel_size=(3, 3, 3)).reshape(
+            B, C, 27, H, W
+        )  # (B,C*9,H,W)
 
         state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
 
         return state
 
-#%%
+
+# %%
 def show_batch(results, channels=4):
     x = results.cpu().clone().permute((0, 2, 3, 1)).detach().numpy()
     plt.figure(2)
@@ -105,17 +113,18 @@ def update_pool(pool, results, idxs):
     return pool
 
 
-def get_image(path,height=50, width=50, padding =0):
+def get_image(path, height=50, width=50, padding=0):
     base = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     base = cv2.resize(base, (int(height), int(width)), interpolation=cv2.INTER_LINEAR)
     base_2 = base / 255
     base_2[..., :3] *= base_2[..., 3:]
     base_torch = torch.tensor(base_2, dtype=torch.float32, requires_grad=True).permute((2, 0, 1)).to(DEVICE)
-    base_torch = torch.nn.functional.pad(base_torch, [padding,padding,padding,padding ])
+    base_torch = torch.nn.functional.pad(base_torch, [padding, padding, padding, padding])
     base_tt = base_torch.cpu().permute((1, 2, 0)).clone().detach().numpy()
-    return base_torch,base_tt
+    return base_torch, base_tt
 
-def get_reference_image_and_seed(path, height = 50, width =50, channels =16):
+
+def get_reference_image_and_seed(path, height=50, width=50, channels=16):
     base = cv2.imread(path, cv2.IMREAD_UNCHANGED)
     base = cv2.resize(base, (int(height), int(width)), interpolation=cv2.INTER_LINEAR)
     base_2 = base / 255
@@ -125,30 +134,31 @@ def get_reference_image_and_seed(path, height = 50, width =50, channels =16):
     x_prime[:3, int(height / 2), int(width / 2)] = 233
     return base_torch, x_prime
 
+
 def to_vue_image(tensor):
     return tensor.cpu().permute((1, 2, 0)).clone().detach().numpy()
 
 
 def double_mass(state, max):
     B, C, H, W = state.shape
-    n_state = [state[i,:3].clone() *2 if (state[i,:3].sum() *2) < max else state[i,:3] for i in range(B)]
+    n_state = [state[i, :3].clone() * 2 if (state[i, :3].sum() * 2) < max else state[i, :3] for i in range(B)]
     n_state = torch.stack(n_state, dim=0)
 
-    return torch.cat((n_state, state[:,3:]), dim=1)
+    return torch.cat((n_state, state[:, 3:]), dim=1)
 
-#%%
+
+# %%
 """Model settings"""
 nca = MassConservingNCA(C=CHANNELS, hidden_n=HIDDE_DIM, device=DEVICE)
-nca.load_state_dict(torch.load("Growing.pth"))   #<---- Change to CA Name
+nca.load_state_dict(torch.load("Growing.pth"))  # <---- Change to CA Name
 nca.to(DEVICE).eval()
-seed = torch.zeros((BATCH_SIZE, CHANNELS ,HEIGHT, WIDTH), device=DEVICE)
-seed[:,:3,int(HEIGHT/ 2), int(WIDTH / 2)] = 100
+seed = torch.zeros((BATCH_SIZE, CHANNELS, HEIGHT, WIDTH), device=DEVICE)
+seed[:, :3, int(HEIGHT / 2), int(WIDTH / 2)] = 100
 x = seed
 
 
-#%%
+# %%
 for i in range(60000):
-
     if ((i % 10) == 0) and (i > 0):
         with torch.no_grad():
             x = double_mass(x, 701)

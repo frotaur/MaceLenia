@@ -62,7 +62,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             has_food=False,
         ),
         "AsymptoticMaCELenia": lambda h, w: AsymptoticMaCELenia(
-            size=(1,h, w), device=device, interest_files=(cur_dir / "demo_macelenia").as_posix(), save_dir='saved_macelenia'
+            size=(1, h, w),
+            device=device,
+            interest_files=(cur_dir / "demo_macelenia").as_posix(),
+            save_dir="saved_macelenia",
         ),
         "EvolvableMaCELenia": lambda h, w: EvolvableMaCELenia(
             (4, h, w),
@@ -120,58 +123,58 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     def create_growth_figures(screen, sW, sH, C):
         figure_size = min(sW * 0.15, sH * 0.15)
         growth_figures = []
-        towards_channel = [(30,0,0), (0,30,0), (0,0,30)]
+        towards_channel = [(30, 0, 0), (0, 30, 0), (0, 0, 30)]
         for i in range(auto.C):
             for j in range(auto.C):
-                x_pos = (sW-auto.C*figure_size) + (j * (figure_size))
+                x_pos = (sW - auto.C * figure_size) + (j * (figure_size))
                 y_pos = sH * 0.2 + (i * (figure_size))
-                fig = pyc.Figure(screen,  x_pos, y_pos, figure_size, figure_size,bg_color=towards_channel[j])
+                fig = pyc.Figure(screen, x_pos, y_pos, figure_size, figure_size, bg_color=towards_channel[j])
                 growth_figures.append(fig)
 
         return growth_figures
+
     growth_figures = create_growth_figures(screen, sW, sH, auto.C)
 
     def plot_growth(auto, figures):
-        if not hasattr(auto, 'growth') or not callable(auto.growth):
+        if not hasattr(auto, "growth") or not callable(auto.growth):
             return
-        x = torch.linspace(-0.5, 2.5, 100).to(device) # (100,)
+        x = torch.linspace(-0.5, 2.5, 100).to(device)  # (100,)
 
         # Sample points from the growth function
         n_points = len(x)
         samples = []
 
-        
         # For each channel pair, sample the growth function
-        C = auto.C if hasattr(auto, 'C') else 3
-        k_mult = auto.k_mult if hasattr(auto, 'k_mult') else 1
-        x_expanded = x.reshape(1,1,1,n_points,1) # (B, 1, 1, n_points, 1)
-        x_expanded = x_expanded.expand(1, C*k_mult, C, n_points, 1) # (B, C, C, n_points, 1)
-        growth_results  = auto.growth(x_expanded) # (B, C, C, n_points, 1)
-        if(hasattr(auto, 'show_batch')):
+        C = auto.C if hasattr(auto, "C") else 3
+        k_mult = auto.k_mult if hasattr(auto, "k_mult") else 1
+        x_expanded = x.reshape(1, 1, 1, n_points, 1)  # (B, 1, 1, n_points, 1)
+        x_expanded = x_expanded.expand(1, C * k_mult, C, n_points, 1)  # (B, C, C, n_points, 1)
+        growth_results = auto.growth(x_expanded)  # (B, C, C, n_points, 1)
+        if hasattr(auto, "show_batch"):
             growth_show = auto.show_batch
-        else :
+        else:
             growth_show = 0
-        growth_results = growth_results[growth_show] # (C, C, n_points, 1) keep only the first batch
+        growth_results = growth_results[growth_show]  # (C, C, n_points, 1) keep only the first batch
         for i in range(C):
             for j in range(C):
-                samples.append(growth_results[i][j])# (n_points, 1)
-        
+                samples.append(growth_results[i][j])  # (n_points, 1)
+
         # Update each figure with its corresponding data
         x_np = x.cpu().tolist()
-        rgb_colors = [(180,10,10), (10,180,10), (10,10,180)]
+        rgb_colors = [(180, 10, 10), (10, 180, 10), (10, 10, 180)]
         for idx, (fig, data) in enumerate(zip(figures, samples)):
             if len(figures) > 0:  # Make sure we have figures to plot to
                 fig.set_xlim((-0.5, 2.5))
                 fig.set_ylim((-2, 2))
                 fig.chart_area.chart_margin = 0
 
-                fig.line('growth', x_np, data.flatten().cpu().tolist(), color=rgb_colors[idx//3])
+                fig.line("growth", x_np, data.flatten().cpu().tolist(), color=rgb_colors[idx // 3])
                 # fig.line(f'jeff{idx}', [-1,-0.5,0.,0.5,1.], [-1,0.3,.2,.5,-.4])
                 # fig.draw()
 
     def display_fig(figure, data):
         x = [i for i in range(len(data))]
-        figure.line('Chart1', x, data)
+        figure.line("Chart1", x, data)
         figure.draw()
 
     def make_text_blocks(description, help_text, std_help, font, font_title):
@@ -312,7 +315,6 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                     display_growth = not display_growth
                     plot_growth(auto, growth_figures)
 
-
             if event.type == pygame.VIDEORESIZE:
                 # Get current window size and new window size
                 old_w, old_h = screen.get_size()
@@ -336,10 +338,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                 input_height = int(new_h * 0.05)
                 margin = int(new_h * 0.02)
 
-                #figure.width = int(0.2 * new_w)
-                #figure.height = int(0.2 * new_h)
-                figure.x = int(0.8*new_w)
-                figure.y = int(0.5*new_h)
+                # figure.width = int(0.2 * new_w)
+                # figure.height = int(0.2 * new_h)
+                figure.x = int(0.8 * new_w)
+                figure.y = int(0.5 * new_h)
 
                 # Update text sizes
                 text_size = int(new_h / 45)
@@ -403,19 +405,16 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                     new_mm = mm_input.get_value()
                     if new_mm and new_mm > 0:
                         Mm = new_mm
-                        auto.mm = Mm/100
+                        auto.mm = Mm / 100
 
                 if mr_input.handle_event(event):
                     new_mr = mr_input.get_value()
                     if new_mr and new_mr > 0:
                         Mr = new_mr
-                        auto.mr = Mr/100
-
-
+                        auto.mr = Mr / 100
 
         if not stopped:
             auto.step()  # step the automaton
-
 
         auto.draw()  # draw the worldstate
         world_surface = auto.worldsurface
@@ -460,13 +459,13 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         if display_growth:
             for fig in growth_figures:
                 fig.draw()
-            
+
         # Draw masses graph if available
         if hasattr(auto, "masses"):
             data = auto.masses
-            figure.set_ylim((min(data)-5, max(data)+6))
-            display_fig(figure,data)
-            
+            figure.set_ylim((min(data) - 5, max(data) + 6))
+            display_fig(figure, data)
+
         pygame.display.flip()
 
         clock.tick(fps)  # limits FPS to 60
@@ -475,5 +474,4 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
 if __name__ == "__main__":
-
     gameloop((1920, 1080), (500, 500), "cuda:0")

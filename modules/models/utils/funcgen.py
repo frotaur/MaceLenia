@@ -18,7 +18,7 @@ class ArbitraryFunction(nn.Module):
     def __init__(
         self,
         coefficients: Tensor,
-        ranges: Tensor|tuple,
+        ranges: Tensor | tuple,
         harmonics: Tensor = None,
         rescale: tuple = None,
         clips_min=None,
@@ -44,13 +44,13 @@ class ArbitraryFunction(nn.Module):
         self.device = device
 
         assert coefficients.ndim == 2, "Coefficients must be a 2D tensor"
-        coefficients = coefficients.reshape(
-            coefficients.shape[0], -1, 2
-        )  # (func_num, num_harmonics,2)
+        coefficients = coefficients.reshape(coefficients.shape[0], -1, 2)  # (func_num, num_harmonics,2)
 
-        func_num,num_harmonics,_ = coefficients.shape
+        func_num, num_harmonics, _ = coefficients.shape
         if harmonics is None:
-            harmonics = torch.arange(num_harmonics, device=device).float()[None,:].expand(func_num,-1) # (func_num, num_harmonics,)
+            harmonics = (
+                torch.arange(num_harmonics, device=device).float()[None, :].expand(func_num, -1)
+            )  # (func_num, num_harmonics,)
 
         assert coefficients[:, :, 0].shape == harmonics.shape, (
             "Coefficients and harmonics must have matchin first two dimensions"
@@ -60,10 +60,10 @@ class ArbitraryFunction(nn.Module):
         self.rescale_range = rescale
         self.clips_min = clips_min
 
-        if(isinstance(ranges, tuple)):
+        if isinstance(ranges, tuple):
             ranges = torch.tensor([ranges[0], ranges[1]], device=device)[None, :].expand(self.func_num, -1)
 
-        self.ranges = ranges.to(self.device) # (B,2)
+        self.ranges = ranges.to(self.device)  # (B,2)
         self.shifts = ranges[:, 0]  # (B,)
         self.period = ranges[:, 1] - ranges[:, 0]  # (B,)
 
@@ -76,8 +76,8 @@ class ArbitraryFunction(nn.Module):
         self.register_buffer("sin_coeffs", coefficients[:, :, 1].to(self.device))  # (B,num_harmonics)
         self.register_buffer("harmonics", harmonics.to(self.device))  # (B,num_harmonics)
 
-        self.cut_off= cut_off
-    
+        self.cut_off = cut_off
+
     @torch.no_grad()
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -95,19 +95,20 @@ class ArbitraryFunction(nn.Module):
         if x.shape[0] == 1:
             x = x.expand(self.func_num, *extra_dims)  # (B,...)
 
-
         x = x.reshape(self.func_num, 1, -1)  # (B,1,*)
 
-
         func_interior = (
-            2 * torch.pi/self.period[:, None, None]
-            * self.harmonics[..., None]* (x - self.shifts[:, None, None])
+            2
+            * torch.pi
+            / self.period[:, None, None]
+            * self.harmonics[..., None]
+            * (x - self.shifts[:, None, None])
         )
         values = torch.sum(
             self.cos_coeffs[..., None] * torch.cos(func_interior)
             + self.sin_coeffs[..., None] * torch.sin(func_interior),
             dim=1,
-        ) # (B,*)
+        )  # (B,*)
 
         if self.rescale_range is not None:
             min_vals, _ = values.min(dim=-1, keepdim=True)  # (B,1)
@@ -115,14 +116,16 @@ class ArbitraryFunction(nn.Module):
 
             values = (values - min_vals) / (max_vals - min_vals + 1e-8)  # (B,*)
             values = values * (self.rescale_range[1] - self.rescale_range[0]) + self.rescale_range[0]
-        
+
         if self.clips_min is not None:
             values[values < self.clips_min] = self.clips_min
 
-        if(self.cut_off):    
-            x_out = (x[:,0]<self.ranges[:, 0][:,None]) | (x[:,0]>self.ranges[:, 1][:, None]) # (N,*) true if out of range
-            values[x_out] = 0.0 # (B,*) set to 0 if out of range
-        
+        if self.cut_off:
+            x_out = (x[:, 0] < self.ranges[:, 0][:, None]) | (
+                x[:, 0] > self.ranges[:, 1][:, None]
+            )  # (N,*) true if out of range
+            values[x_out] = 0.0  # (B,*) set to 0 if out of range
+
         # Restore initial shape
         values = values.reshape(self.func_num, *extra_dims)
 
@@ -134,7 +137,7 @@ class ArbitraryFunction(nn.Module):
         Returns random arbitrary function, samples coefficients from a Gaussian distribution
         This function is mostly deprecated, usually the sampling of the coefficients is done outside,
         but could be useful for basic usecases.
-        
+
         Args:
             func_num : int, number of functions to generate
             n_coeffs : number of coefficients to use for the approximation
@@ -154,7 +157,7 @@ class ArbitraryFunction(nn.Module):
             ranges = torch.tensor([ranges[0], ranges[1]], device=device)[None, :].expand(func_num, -1)
 
         return ArbitraryFunction(
-            coefficients=torch.stack([cos_coeffs, sin_coeffs], dim=-1).reshape(func_num, n_coeffs*2),
+            coefficients=torch.stack([cos_coeffs, sin_coeffs], dim=-1).reshape(func_num, n_coeffs * 2),
             harmonics=harmonics,
             ranges=ranges,
             rescale=rescale,

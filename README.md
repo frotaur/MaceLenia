@@ -39,7 +39,7 @@ Screen size can be resized a posterior simply by resizing the window. Note that 
 
 The world size is the actual size of the simulated world. This can be modified using the simulation UI while running the program as well.
 
-MaceNCA can be trained and run with a different files that can be found [here](misc/README.md).
+For running and training MaceNCA models, please follow the readme that can be found at [macenca/README.md](macenca/README.md).
 
 ### Simulation window
 All information and interactivity is displayed in the simulation GUI. The window you will see will look as follows.
@@ -65,7 +65,7 @@ Finally, on the bottom right there is a dropdown menu to select the different av
 - AsymptoticMaCELenia : Implementation of MaCELenia including the $\Delta x$ and $\Delta t$ parameters, which allows exploring the continuous limit by varying the discretization.
 - EvolvableMaCELenia :(EXPERIMENTAL) Implementation that allows extrinsic evolution experiments, and manual evolution. Not as well documented, and still experimental (might be buggy)
 
-*To skim nice dynamics, we recommend cycling throught the saved parameters with `M` on `MaCELenia` and `MaCELeniaCrossChannel`, and potentially trying random parameters using `N` and `A`.*
+*To skim nice dynamics, we recommend cycling throught the saved parameters with `M` on `MaCELenia` and `MaCELeniaCrossChannel` (and re-initialize with 'O'), and potentially trying random parameters using `N` and `A`.*
 ## Code structure
 This repository builds on top of [PyCA](https://github.com/frotaur/PyCA), for more information one can follow the tutorial linked in PyCA's README. Here, we briefly go over the code structure, and chiefly where the MaCE rule is implemented. Main files that could be of interest are marked with 🔴. All files marked with the sign have been extensively documented, and we have made effort so the code is as readable and understandable as possible.
 
