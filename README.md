@@ -44,7 +44,7 @@ For running and training MaceNCA models, please follow the readme that can be fo
 ### Simulation window
 All information and interactivity is displayed in the simulation GUI. The window you will see will look as follows.
 
-![Simulation screen](./readmedata/simulationscreen.png)
+![Simulation screen](readmedata/simulationscreen.png)
 
 On the top left, general interface controls are displayed. These controls are applicable no matter which model is currently selected. Just below, camera controls are displayed. The windows can be resized at will.
 
