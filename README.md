@@ -39,6 +39,8 @@ Screen size can be resized a posterior simply by resizing the window. Note that 
 
 The world size is the actual size of the simulated world. This can be modified using the simulation UI while running the program as well.
 
+MaceNCA can be trained and run with a different files that can be found [here](misc/README.md).
+
 ### Simulation window
 All information and interactivity is displayed in the simulation GUI. The window you will see will look as follows.
 

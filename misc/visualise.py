@@ -3,8 +3,17 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+from modules.models.utils import torch_utils
 
+#%%
+""" Device and Hyperparameters"""
 DEVICE = "cuda:0"
+HEIGHT = 50
+WIDTH = 50
+CHANNELS = 16 #<--- NCA feature channels
+HIDDE_DIM = 64
+BATCH_SIZE = 1
+#%%
 def perchannel_conv(x, filters):
     b, ch, h, w = x.shape
     y = x.reshape(b * ch, 1, h, w)
@@ -38,6 +47,7 @@ class MassConservingNCA(torch.nn.Module):
         y = self.w2(torch.relu(self.w1(y)))
         b, c, h, w = y.shape
         update_mask = (torch.rand(b, 1, h, w, device=self.device) + update_rate).floor()
+
         x_normal = x[:,3:,...]
         x_mass = x[:,:3,...]
 
@@ -56,27 +66,15 @@ class MassConservingNCA(torch.nn.Module):
     def redistribution(self,Aff,state):
 
         B, C, H, W = state.shape
-        Aff_exp = F.pad(Aff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
-        Aff_exp = F.unfold(Aff_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        Aff_exp = F.pad(Aff, (1, 1, 1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel
+        Aff_exp = torch_utils.unfold3d(Aff_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
         E = Aff_exp.sum(dim=2)
-        E_exp = F.pad(E, (1, 1, 1, 1), mode="circular")
-        E_exp = F.unfold(E_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
-        state_exp = F.pad(state, (1, 1, 1, 1), mode="circular")
-        state_exp = F.unfold(state_exp, kernel_size=(3, 3)).reshape(B, C, 9, H, W)  # (B,C*9,H,W)
+        E_exp = F.pad(E, (1, 1, 1, 1, 1, 1), mode="circular")
+        E_exp = torch_utils.unfold3d(E_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
+        state_exp = F.pad(state, (1, 1, 1, 1, 1, 1), mode="circular")
+        state_exp = torch_utils.unfold3d(state_exp, kernel_size=(3, 3, 3)).reshape(B, C, 27, H, W)  # (B,C*9,H,W)
 
         state = ((Aff[:, :, None, ...] / E_exp) * state_exp).sum(dim=2)
-
-        min_aff = Aff.min()
-        max_aff = Aff.max()
-        Aff_norm = (Aff - min_aff) / (max_aff - min_aff+1e-6)
-        Aff_c = Aff_norm / (Aff_norm.sum(dim=1, keepdim=True)+1e-6)
-
-
-
-        target_cross_c_masses = state.sum(dim=1, keepdim=True) * Aff_c
-        diff_target = state - target_cross_c_masses
-        alpha = 0.0001
-        state -= diff_target * alpha
 
         return state
 
@@ -139,22 +137,16 @@ def double_mass(state, max):
     return torch.cat((n_state, state[:,3:]), dim=1)
 
 #%%
-
-HEIGHT = 50
-WIDTH = 50
-CHANNELS = 16 #<--- NCA feature channels
-BATCH_SIZE = 1
-
-
-nca = MassConservingNCA(C=CHANNELS, hidden_n=96, device=DEVICE)
-nca.load_state_dict(torch.load("Growing.pth"))
+"""Model settings"""
+nca = MassConservingNCA(C=CHANNELS, hidden_n=HIDDE_DIM, device=DEVICE)
+nca.load_state_dict(torch.load("Growing.pth"))   #<---- Change to CA Name
 nca.to(DEVICE).eval()
-
-
-
 seed = torch.zeros((BATCH_SIZE, CHANNELS ,HEIGHT, WIDTH), device=DEVICE)
 seed[:,:3,int(HEIGHT/ 2), int(WIDTH / 2)] = 100
 x = seed
+
+
+#%%
 for i in range(60000):
 
     if ((i % 10) == 0) and (i > 0):
@@ -171,4 +163,3 @@ for i in range(60000):
     cv2.imshow("image", image)
 
     cv2.waitKey(1)
-    # print(i)
