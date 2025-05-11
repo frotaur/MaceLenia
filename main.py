@@ -32,8 +32,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             num_channels=3,
             device=device,
             has_food=False,
-            save_dir="saved_macelenia",
-            interest_files=(cur_dir / "demo_macelenia").as_posix(),
+            # save_dir="saved_macelenia",
+            save_dir="intrinsic_evo_filtered",
+            interest_files=(cur_dir / "intrinsic_evo_nosense").as_posix(),
         ),
         "MaCELeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
             (1, h, w),
@@ -41,8 +42,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             num_channels=3,
             device=device,
             has_food=False,
-            save_dir="saved_xchanmacelenia",
-            interest_files=(cur_dir / "demo_xchanmacelenia").as_posix(),
+            # save_dir="saved_xchanmacelenia",
+            save_dir="intrinsic_evo_filtered_cross",
+            interest_files=(cur_dir / "intrinsic_evo_nosense_cross").as_posix(),
         ),
         "Lenia": lambda h, w: Lenia(
             (1, h, w),
@@ -429,7 +431,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         if recording:
             if launch_vid:  # If the video is not launched, we create it
                 launch_vid = False
-                writer = launch_video((H, W), video_fps, "mp4v")
+                writer = launch_video(size=(H, W), fps=video_fps, fourcc="mp4v")
             add_frame(
                 writer, world_surface
             )  # (in the future, we may add the zoomed frame instead of the full frame)

@@ -181,9 +181,10 @@ class Lenia(DevModule, Automaton):
         self.k = self.compute_kernel()
         self.fft_kernel = self.kernel_to_fft(self.k)  # (B,C,C,h,w)
         self.state = F.interpolate(self.state, size=new_size, mode="bilinear", align_corners=False)
-        self.food_channel = F.interpolate(
-            self.food_channel, size=new_size, mode="bilinear", align_corners=False
-        )
+        if(self.has_food):
+            self.food_channel = F.interpolate(
+                self.food_channel, size=new_size, mode="bilinear", align_corners=False
+            )
 
     def set_init_fractal(self):
         """
@@ -518,7 +519,7 @@ class Lenia(DevModule, Automaton):
                     k_rescale=(-0.5, 1),
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
-                    sigma_size=0.3,
+                    sigma_size=0.8,
                     k_coeffs=4,
                     g_coeffs=3,
                     g_clip=-0.5,
@@ -599,6 +600,7 @@ class Lenia(DevModule, Automaton):
                     k_mult=self.k_mult,
                     k_arbi=self.k_arbi,
                     g_arbi=self.g_arbi,
+                    sigma_size=0.3,
                     k_coeffs=4,
                     g_coeffs=3,
                     g_clip=-0.5,

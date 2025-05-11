@@ -24,6 +24,7 @@ class MaCELeniaCrossChannel(MaCELenia):
         state_init=None,
         device="cpu",
         has_food=False,
+        sense_food=False,
         interest_files=None,
         save_dir=".",
     ):
@@ -44,6 +45,7 @@ class MaCELeniaCrossChannel(MaCELenia):
             params,
             state_init,
             has_food=has_food,
+            sense_food=sense_food,
             device=device,
             interest_files=interest_files,
             save_dir=save_dir,
@@ -58,11 +60,11 @@ class MaCELeniaCrossChannel(MaCELenia):
         if "alpha" in params:
             self.alpha = params["alpha"]
 
-    def step(self, sense_food=False):
+    def step(self):
         """
         Steps the alife model by one time step
         """
-        Aff = self._mace_step(sense_food=sense_food)
+        Aff = self._mace_step(sense_food=self.sense_food)
         if self.has_food:
             self._food_step()
         self._cross_chan_step(Aff)  # (B,C,H,W) cross channel step

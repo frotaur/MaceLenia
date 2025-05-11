@@ -34,7 +34,7 @@ class MaCELenia(Lenia):
             device : str, device to use
         """
         self.has_food = has_food  # Needed for initialization
-        self.initial_food = 10000
+        self.initial_food = 0.1* size[1] * size[2]  # Amount of food to add at initialization
         self.sense_food = sense_food
         super().__init__(
             size,
@@ -156,7 +156,7 @@ class MaCELenia(Lenia):
         if self.has_food:  # Only do something if food is active
             self._decay_and_distribute()  # Decay the state and redistribute the mass to the food
 
-            self._consume_food(min_density=0.05, transfer_rate=0.06, death_enabled=False)
+            self._consume_food(min_density=0.3 if self.sense_food else 0.1, transfer_rate=0.1, death_enabled=False)
 
     def _decay_and_distribute(self):
         """
@@ -169,7 +169,7 @@ class MaCELenia(Lenia):
         # --- Decay 2 --- Same as before, but with a minimal value. Allows for a thin 'veil' of mass to spread, which helps solitons move around
         # allowable_decay = torch.where(self.state>0.01,self.state*0.0007+torch.full_like(self.state,0.02*0.0005), torch.zeros_like(self.state))
         # --- Decay 3 --- Constant decay. Encourages more high concentrations, as proportionally they decay slower
-        allowable_decay = torch.where(self.state > 0.005, 0.0003, torch.zeros_like(self.state))
+        allowable_decay = torch.where(self.state > 0.02, 0.0003, torch.zeros_like(self.state))
 
         self.state = self.state - allowable_decay  # Update the state by subtracting the allowable decay
 
@@ -182,7 +182,7 @@ class MaCELenia(Lenia):
         if update_idxs:  # Each batchs that has lost more than food_amount gets a redistribution
             self.cum_loss_mass[update_idxs] = self.cum_loss_mass[update_idxs] - food_amount
             self.food_channel = self.random_food_chan(
-                food_amount=food_amount, num_spots=1, food_size=7, add_to_exisitng=True, batches=update_idxs
+                food_amount=food_amount, num_spots=5, food_size=7, add_to_exisitng=True, batches=update_idxs
             )
 
     def _consume_food(self, min_density=0.1, transfer_rate=0.03, death_enabled=False):
