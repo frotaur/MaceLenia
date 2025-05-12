@@ -694,7 +694,7 @@ class Lenia(DevModule, Automaton):
         self.state = F.pad(self.state, (pad_w, pad_w, pad_h, pad_h), mode="constant", value=0.0)
 
     def get_string_state(self):
-        return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi}"
+        return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi} "
 
 
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:

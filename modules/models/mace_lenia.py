@@ -231,7 +231,7 @@ class MaCELenia(Lenia):
         DOWN -> Decrease temperature
         PLUS -> Show next batch
         MINUS -> Show previous batch
-        B -> Toggle show all batches at once
+        B -> Toggle show all batches (only if batch > 1)
         F (+shift) -> Toggle food and decay (+shift toggle food sensing)
         """
         super().process_event(event, camera)
@@ -245,7 +245,8 @@ class MaCELenia(Lenia):
             if event.key == pygame.K_KP_MINUS or event.key == pygame.K_MINUS:
                 self.update_show_batch(-1)
             if event.key == pygame.K_b:
-                self.show_all = not self.show_al
+                if(self.batch > 1):
+                    self.show_all = not self.show_all
             if event.key == pygame.K_f:
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     self.sense_food = not self.sense_food
