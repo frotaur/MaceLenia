@@ -33,8 +33,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             device=device,
             has_food=False,
             # save_dir="saved_macelenia",
-            save_dir="intrinsic_evo_filtered",
-            interest_files=(cur_dir / "intrinsic_evo_nosense").as_posix(),
+            save_dir="saved_macelenia",
+            interest_files=(cur_dir / "demo_macelenia").as_posix(),
         ),
         "MaCELeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
             (1, h, w),
@@ -43,8 +43,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             device=device,
             has_food=False,
             # save_dir="saved_xchanmacelenia",
-            save_dir="intrinsic_evo_filtered_cross",
-            interest_files=(cur_dir / "intrinsic_evo_nosense_cross").as_posix(),
+            save_dir="saved_xchanmacelenia",
+            interest_files=(cur_dir / "demo_xchanmacelenia").as_posix(),
         ),
         "Lenia": lambda h, w: Lenia(
             (1, h, w),
