@@ -147,7 +147,14 @@ _{i,j\in \mathcal{N}(k,l)}=\sum_{k,l}\sum_{i,j\in \mathcal{N}(k,l)}</d-math></as
     
     <p>We can see that in the original formula (<a href="#2">2</a>), we had (implicitly) chosen <d-math>3\Delta t = \Delta x^2</d-math>, with <d-math>\Delta x</d-math> given by the grid size. Notably, <d-math>\frac{3\Delta t}{\Delta x^2}=1</d-math> is a critical value, as the discretization breaks down above this point due to the negative pre-factor to <d-math>\rho_{ij}^t</d-math>. This limiting value is to be expected as even for pure diffusion with a similar full stencil, the stability condition requires <d-math>2\Delta t<\Delta x^2</d-math>. In practice, we always use <d-math>3\Delta t = \Delta x^2</d-math>, which both simplifies the evolution equation and maximizes the 'speed' of the dynamics by choosing the biggest possible <d-math>\Delta t</d-math>, given <d-math>\Delta x</d-math>.</p>
 
-    <p>Equation <a href="#7">7</a> de-mystifies the mass-conserving evolution rule, and the role of <d-math>\beta</d-math>. The rule effectively conserves mass by applying a combination of a fixed diffusion, and advection along the gradient of <d-math>A</d-math>. The <d-math>\beta</d-math> parameter sets the relative strength of the two effects; at <d-math>\beta=0</d-math> we have pure diffusion, and the effect of the advection becomes more prominent as we increase it (see Fig. \ref{fig:betaindifflenia} for display of the effect of <d-math>\beta</d-math>).</p>
+    <p>Equation <a href="#7">7</a> de-mystifies the mass-conserving evolution rule, and the role of <d-math>\beta</d-math>.
+        The rule effectively conserves mass by applying a combination of a fixed diffusion, and advection along the gradient
+        of <d-math>A</d-math>. The <d-math>\beta</d-math> parameter sets the relative strength of the two effects; at <d-math>\beta=0</d-math>
+        we have pure diffusion, and the effect of the advection becomes more prominent as we increase it (see <a href="#deltaT" class="figure-link" data-target="deltaT"></a> for display
+        of the effect of <d-math>\beta</d-math>).</p>
+
+    <figure style="text-align: center; margin: 2rem 0;" id="deltaT"><video loop autoplay playsinline muted width="640px"; src="figures/delta_t.mp4" style="width:50%; border: 0px solid rgba(0, 0, 0, 0.2);"/></figure><figcaption>Display of the effect of <d-math>\beta</d-math>, growing from 0 to 10 going from left to right. At low <d-math>\beta</d-math>, diffusion dominates, while increasing <d-math>\beta</d-math> generates sharper dynamics and more solitons.</figcaption>
+    <p><br></p>
 
     <a class="marker" href="#section-2.4" id="section-2.4"></a>
     <h3>MaCELenia</h3>
