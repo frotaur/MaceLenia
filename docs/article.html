@@ -6,126 +6,191 @@
 
 %% contents.html
 
-    <p>Sample ref: <d-cite key="placeholder"></d-cite></p>
-    <h4>Sample math:</h4>
-    <d-math block>
-      c = \pm \sqrt{ \sum_{i=0}^{n}{a^{222} + b^2}}
-    </d-math>
-    <p>Sample footnote <d-footnote>Footnote</d-footnote> </p>
-    <figure style="text-align: center; margin: 2rem 0;" id="figure-augment"><img playsinline src="figures/Sample_img.jpg";
-          style="width:50%; border: 0px solid rgba(0, 0, 0, 0.2);" /></figure><figcaption>Sample figure and caption.</figcaption>
-    <p>Sample cross-reference to figure  (<a href="#figure-augment" class="figure-link" data-target="figure-augment"></a>)</p>
+
+    <p>In the arduous search for Artificial Life, researchers over the years have produced a great diversity of systems
+        that attempt to capture some of the elusive aspects of life, such as emergence of complexity, self-organization or evolution.
+        Among these models, one particularly well-represented class is that of Cellular Automata (CA)(<d-cite key="vonneumann1966theory,wolframUniversalityComplexityCellular1984"></d-cite>),
+        which come in a host of variations, be it discrete, as the famous Game Of Life (<d-cite key="MathematicalGamesFantastic1970"></d-cite>), continuous, as in the more modern
+        Lenia (<d-cite key="chanLeniaExpandedUniverse2020"></d-cite>) or somewhere in between like for Multi-Neighborhood-CAs
+        (<d-cite key="evansLargerLifeDigital2001,slackermanzMNCACompilationSlackermanz2023"></d-cite>) or Neural-CAs (<d-cite key="mordvintsevGrowingNeuralCellular2020"></d-cite>). <br><br>
+        The appeal of CAs is two-fold. First is their simplicity: defining their behaviours only requires specifying what happens to a
+        cell given its neighborhood, and this simplicity does not preclude them from displaying arbitrarily complex behaviours
+        (<d-cite key="cookUniversalityElementaryCellular2004,johnston2022conways"></d-cite>)! Secondly, their inherently local evolution rule means the
+        dynamics are easily parallelizable, allowing the efficient simulation of large-scale worlds necessary to probe emergent properties.</p>
+
+
+
+    <p>Despite these advantages, one property often found lacking in CAs is the presence of any conserved quantities, most notably, the absence of mass conservation.
+        Although it is by no means necessary to obtain interesting behaviours, it does bring a host of desirable properties. First, the existence of conserved quantities
+        immediately implies limited resources, which are an important factor in driving intrinsic evolution by forcing emerging creatures to compete for access to these
+        resources(<d-cite key="hickinbothamConservationMatterIncreases2015"></d-cite>). Second, it has a strong regularizing behaviour; patterns can no longer explode or die out, and this
+        makes it much more likely for interesting behaviours to arise, as one no longer needs to first look for self-stabilizing sets of rules. Finally, it also allows one
+        to set up interesting experiments, for example by adding extra mass to the system in the form of 'food' or adding mass sinks and sources to break the symmetry of the
+        world. </p>
+
+    <p>Mass conservation in Alife systems is so far mostly achieved by using particle systems, such as Particle Life(<d-cite key="mohrTommohrParticlelifeapp2025"></d-cite>),
+        Particle Lenia (<d-cite key="mordvintsevParticleLeniaEnergybased"></d-cite>), A.L.I.E.N. (<d-cite key="heinemannChrxhAlien2025"></d-cite>) and
+        others (<d-cite key="succi2001lattice,reynoldsFlocksHerdsSchools1987"></d-cite>). While this provides all of the aforementioned advantages, it has other drawbacks.
+        The system is inherently discrete, and approaching a continuous limit involves hugely scaling the number of particles, which becomes an involved endeavour
+        since the complexity of the simulation grows quadratically with the particle number, though this can be optimized up to a point. Compared to CAs,
+        particle systems are mostly an orthogonal approach to Artificial Life, with some trade-offs in simplicity and native parallelizability.</p>
+
+
+    <p>To bring the benefits of mass conservation to CAs, we propose in this work the <b>Ma</b>ss <b>C</b>onserving <b>E</b>volution rule (MaCE), which is an update rule that
+        implements mass conservation locally, and that can be easily slotted into existing CAs (both continuous and discrete) often with little to no changes. The approach taken is similar
+        in spirit to the mass-conserving scheme used in Flow-Lenia(<d-cite key="plantecFlowLeniaOpenendedEvolution2023a"></d-cite>), although we argue our scheme is simpler, while having a wider applicability.</p>
+
+    <p>The paper is organized as follows. We begin by introducing MaCE, explaining the logical reasoning behind it, and show it admits a well-defined continuous limit,
+        as well as a version applicable to CAs with discrete states. Then, we probe its capabilities by applying it to Lenia to obtain MaCELenia, which also allows a
+        one-to-one comparison with Flow-Lenia. Finally, we show its versatility by applying it to NCAs and discrete holistic CAs, before closing with a discussion
+        on the possible future applications of MaCE, discussing both its strengths and its shortcomings.</p>
+
     <a class="marker" href="#section-2" id="section-2"></a>
-    <h2>Model</h2>
-    <p>Diffusion Lenia is a state-continuous cellular automaton. It incorporates the growth-computation of Lenia, while
-        implementing the update rule in a mass-conserving manner. While similar to other mass-conserving approaches such
-        as Flow-Lenia, its update rule differs significantly.</p>
+    <h2>The Mass Conserving Evolution Rule</h2>
+
+    <p>In this section, we describe the MaCE rule in detail, prove it conserves mass exactly, and investigate its continuous limit.</p>
 
     <a class="marker" href="#section-2.1" id="section-2.1"></a>
-    <h2>Diffusion Lenia Evolution Equation</h2>
-    <p>Denote the ‘mass density field’ as <d-math>\rho^t_{ij}\in R^c </d-math>, where <d-math>c</d-math> is the number of channels, which we will set
-        to 1 for simplicity, but everything follow. <d-math>i,j \in \mathbb{Z}^2</d-math> denote the discretization of the 2D space,
-        and <d-math>t</d-math> denotes the time-step.</p>
-
-    <p>Following Lenia, we have some kernel <d-math>K_{ij}</d-math>, and a growth function <d-math>G(x) \in \mathbb{R}</d-math>. By convolving the
-        mass density field <d-math>\rho^t</d-math>, then applying the growth function pointwise for the result, we obtain the
-        pre-affinity field, denoted <d-math>A_{ij}</d-math></p>
-
-    <d-math style="text-align: center; margin: 2rem 0;" >
-    A_{ij} = G(K*\rho^t)_{ij}</d-math>
-
-    <p>This quantity is computed the same way as in Lenia. However, we do not use it directly as a ‘growth’ of the density
-        field, rather these values will be interpreted as an ‘affinity’ or ‘attraction’ for mass. In other words, locations
-        with greater values of <d-math>A_{ij}</d-math> will tend to attract more mass. More precisely, each pixel <d-math>(i,j)</d-math> will compete
-        for mass inside its neighborhood <d-math>\mathcal{N}(i,j)</d-math> (we use the Moore neighborhood, but the evolution equation is
-        applicable for arbitrary neighborhoods, as long as they satisfy the reflexivity condition, see below).</p>
-
-    <p>Specifically, the evolution equation is : </p>
-    <d-math style="text-align: center; margin: 2rem 0;">Z_{ij} = \sum_{k,l\in\mathcal{N}(i,j)}e^{\beta A_{ij}}
-        </d-math>
-
-    <d-math style="text-align: center; margin: 2rem 0;">\rho^{t+1}_{ij}=\sum_{i',j'\in \mathcal{N}(i,j)} \frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'}</d-math>
-
-    <p>We introduce an extra hyperparameter <d-math>\beta</d-math> which can be thought as a vague analog of an inverse temperature; 
-        <d-math>Z_{ij}</d-math> is a normalization parameter, it computes the total affinity in the full neighborhood <d-math>\mathcal{N}(i,j)</d-math>. 
-        Note that we run our ‘pre-affinities’ <d-math>A_{ij}</d-math> into an exponential for positivity, which guarantees that <d-math>Z_{ij}>0</d-math>. 
-        Thus, our affinities are actually the <d-math>e^{\beta A_{ij}}</d-math>.</p>
-
-    <p>It can be easily shown that <d-math>(*)</d-math> conserves the total mass. Indeed, summing over all pixels : </p>
-
-    <d-math style="text-align: center; margin: 2rem 0;">
-M^{t+1} = \sum_{i,j} \rho_{ij}^{t+1} = \sum_{i,j}\sum_{i',j'\in\mathcal{N}(i,j)}\frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'}</d-math>
-
-    <d-math style="text-align: center; margin: 0rem 0;">= \sum_{i',j'}\frac{\rho^t_{i',j'}}{Z_{i'j'}}\sum_{i,j\in\mathcal{N}(i',j')}e^{\beta A_{ij}} = \sum_{i',j'}\frac{\rho^t_{i',j'}}{Z_{i'j'}}Z_{i'j'} = \sum_{i',j'}\rho^t_{i',j'} = M^t</d-math>
-    <p></p>
-
-    <p>To invert the sums, we used the fact that <d-math>\sum_{i,j}\sum_{k,l\in \mathcal{N}(i,j)} = \sum_{i,j}\sum_{k,l} \mathbb{1}_{k,l\in \mathcal{N}(i,j)} =\sum_{i,j}\sum_{k,l} \mathbb{1}_{i,j\in \mathcal{N}(k,l)}= \sum_{k,l}\sum_{i,j\in \mathcal{N}(k,l)}</d-math> which simply comes from reflexivity of the neighborhood relation :  <d-math>k,l \in \mathcal{N}(i,j)\Leftrightarrow i,j \in \mathcal{N}(k,l)</d-math> . For ‘reasonable’ neighborhoods, this is always true, as ‘being neighbor of’ should in general satisfy reflexivity.</p>
-
-    <p>Let us understand a bit more intuitively why this evolution rule conserves mass. As we have said, the amount of
-        mass each pixel receives is dependent on its affinity. But how exactly? Well, each pixel <d-math>(i,j)</d-math>
-        decides how to redistribute its mass to its neighborhood by partitioning it according to its own local distribution,
-        given by <d-math>\frac{e^{\beta A_{i'j'}}}{Z_{ij}}</d-math>. Now, each pixel <d-math>(i',j') </d-math> in its
-        neighborhood (i.e. including itself) will receive a portion  <d-math>\frac{e^{\beta A_{i'j'}}}{Z_{ij}}</d-math>
-        of its mass, i.e. <d-math>\frac{e^{\beta A_{i'j'}}}{Z_{ij}}\rho^t_{ij}</d-math>. That’s it! So, each pixel <d-math>i,j</d-math>
-        receives contributions from all the pixels <d-math>i'j'</d-math> in their neighborhood. </p>
-
-    <p>According to the above discussion the neighbor pixel <d-math>i'j'</d-math> will give <d-math>\frac{e^{\beta A_{ij}}}
-        {Z_{i'j'}}\rho^t_{i'j'}</d-math>, so all we need to compute the new density value for <d-math>\rho^{t+1}_{ij}</d-math>
-        is to sum all these contributions, which gives us exactly equation <d-math>(*)</d-math>. As we can see, the evolution rule involves simply a
-        reshuffling of the total mass, and as such it is obviously conservative.</p>
-
-    <p>This point of view is reminiscent of the evolution rule for Flow-Lenia. In Flow-Lenia, a flow field is computed using
-        the gradient of the pre-affinity. Then, matter is moved along this flow field using ‘reintegration tracking’. The update rule is  :</p>
-
-    <d-math style="text-align: center; margin: 2rem 0;">
-            \rho^{t+1}(x) = \sum_{x'} I(x',x)\rho^t(x') </d-math>
-
-
-    <p>Where <d-math>I(x',x)</d-math> denotes the portion of mass going from <d-math>x'</d-math> to <d-math>x</d-math>.
-        In Flow Lenia, the effective ‘neighborhood’ is technically the full domain, as mass could in principle flow in from arbitrary distances.
-        It suffices then to require the condition <d-math>\sum_{x} I(x',x)=1</d-math>, and we have conservation of mass.</p>
-
-    <p>As such, we can describe a full ‘family’ of mass-conserving CA’s, of which both Flow-Lenia and Diffusion-Lenia are examples : </p>
-
-    <d-math style="text-align: center; margin: 2rem 0;">
-        \rho^{t+1}(x) = \sum_{x'} I(x',x)\rho^t(x'), \,\,\, \sum_x I(x',x) = 1</d-math>
-
-    <p>In Diffusion Lenia, we can pictorially write <d-math>I(x',x) = \frac{e^{\beta A(x)}}{Z(x')} \mathbb{1}_{x'\in \mathcal{N}(x)}</d-math>.</p>
+    <h3>Definitions</h3>
+    
+    <p>We denote the 'mass' field as <d-math>\rho^t_c(\vec{x})\in \mathbb{R}</d-math>, where <d-math>t \in \mathbb{R}</d-math> denotes the time, <d-math>\vec{x}\in \mathbb{R}^n</d-math> 
+        denotes the spatial position (we take <d-math>n=2</d-math> from here on) and <d-math>c\in [[1,...,C]]</d-math> denotes the different channels. Most of the time we omit 
+        the channel indices for readability, and each equation should be thought as acting on each channel. We will also use the discretized versions 
+        of these quantities when describing the implementation of the evolution rule, namely <d-math>\rho^t_{ij}= \rho^t(i*\Delta x,j*\Delta y)</d-math> where <d-math>i,j \in \mathbb{Z}</d-math> denote 
+        locations on a grid, and the time <d-math>t\in \mathbb{N}</d-math> takes discrete values.</p>
+    
+    <p>We will also need an 'Affinity' field <d-math>A(\vec{x},\rho) \in \mathbb{R}</d-math> (<d-math>A_{ij}</d-math> in its discrete version, omitting <d-math>\rho</d-math>) which is a number that can be computed at each location
+    from the current state of the automaton (the naming is borrowed from Flow-Lenia (<d-cite key="plantecFlowLeniaOpenendedEvolution2023a"></d-cite>)). Roughly, this
+    affinity value will determine how much a location is locally 'attractive' to mass; according to the evolution rule, mass will tend to move towards 
+    higher affinity values. The specific way in which this affinity value is computed is unconstrained, and as such, any model that computes a real value 
+    for each cell is amenable to this mass-conserving modification.</p>
 
     <a class="marker" href="#section-2.2" id="section-2.2"></a>
-    <h2>The ‘inverse temperature’ <d-math>\beta</d-math> </h2>
+    <h3>Mass-Conserving Evolution Rule</h3>
 
-    <p></p>Here an image of the temperature as a function of space would be nice to visualize</p>
-    <p>Let us understand the role of <d-math>\beta</d-math>, first by analyzing its limits.</p>
-    <p>In the limit <d-math>\beta\rightarrow 0</d-math>, the affinity values <d-math>A(x)</d-math> become meaningless; each cell effectively has the 
-        same affinity value. Therefore, each cell redistributes its matter equally to all neighbors. The evolution equation becomes : </p>
+    <p>Given the affinity field, under one time-step the mass field will be evolved according to the following evolution equation <aside>These equations are highly inspired by (<d-cite key="ereb0slabs2022"></d-cite>) and we attempted to contact the author without success.</aside></p>
 
-    <d-math style="text-align: center; margin: 2rem 0;">
-            \rho^{t+1}_{ij}=\frac{1}{|\mathcal{N}|}\sum_{i',j'\in \mathcal{N}(i,j)}\rho^t_{i'j'}</d-math>
 
-    <p>Each cell becomes the average of the cells in its neighborhood. In the case where <d-math>\mathcal{N}</d-math> is the Moore 
-        neighborhood, <d-math>|\mathcal{N}|=9</d-math>, and we can re-write the equation as :</p>
+    <d-math style="text-align: center; margin: 2rem 0;" href="#1">
+     Z_{ij} = \sum_{k,l\in\mathcal{N}_{ij}}e^{\beta A_{kl}} \ \ \ \ \ \ \ \ \ (1)
 
-    <d-math style="text-align: center; margin: 2rem 0;">
-\rho^{t+1}_{ij}-\rho^t_{ij}=\frac{1}{9}(K*\rho^t)_{ij}</d-math>
+    </d-math>
 
-    <d-math style="text-align: center; margin: 2rem 0;">K = \begin{pmatrix} 1 & 1 & 1 \\ 1 & -8 & 1 \\ 1 & 1 & 1 \end{pmatrix}</d-math>
+    <d-math style="text-align: center; margin: 2rem 0;" href="#2" id="2">
+     \rho^{t+1}_{ij}=\sum_{i',j'\in \mathcal{N}_{ij}} \frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'} \ \ \ \ \ \ \ \ \  (2)
+
+    </d-math>
     
-    <p>Where <d-math>K*\rho^t</d-math> denotes the convolution. In this form, we recognize the discretization of the diffusion equation</p>
+    <p>Where the sum <d-math>k,l\in \mathcal{N}_{ij}</d-math> denotes summing over the neighborhood of cell <d-math>(i,j)</d-math>. We use a <d-math>3\times 3</d-math> Moore neighborhood, so <d-math>\mathcal{N}</d-math> 
+        will henceforth denote this neighborhood. We also introduced a new parameter, <d-math>\beta \in \mathbb{R}</d-math>, which we will see can be interpreted as 
+        an inverse temperature. </p>
+
+    <p>Let us unpack this evolution equation to understand it. First, instead of working directly with the affinities, we exponentiate them, as we will need positive values. Then, each cell 
+        computes <d-math>Z_{ij}</d-math>, which is a normalization constant for the affinities of its neighbours. The quantity 
+        <d-math>p_{i'j'} = \frac{e^{\beta A_{i'j'}}}{Z_{ij}}, \,\, (i',j')\in \mathcal{N}_{ij}</d-math> can now be seen as the mass 'portion' 
+        each cell in <d-math>\mathcal{N}_{ij}</d-math> is entitled to. The higher the relative affinity of a cell compared to the neighborhood, 
+        the bigger the mass portion it will receive. The evolution rule then redistributes mass according to these portions. Simply put, 
+        each cell looks at its neighborhood, computes the mass portions according to the affinities, and redistributes its own mass according to these portions.</p>
+
+    <p>Equation (<a href="#2">2</a>) simply encapsulates all the mass contributions to cell <d-math>(i,j)</d-math>. It will receive mass from all its neighbours, each time the portion being
+        different, since each cell computes the portions according to its own neighborhood normalization. According to this explanation, it is easy to convince oneself 
+        this equation conserves mass; indeed, each cell simply redistributes its own mass to its neighbors each time step, and so mass is necessarily conserved. This 
+        can be shown by looking at the total mass <d-math>M^t = \sum_{i,j}\rho_{ij}^t</d-math>, as in (<a href="#3">3</a>) </p>
+
+    <d-math style="text-align: center; margin: 2rem 0;" href="#3" id="3">
+      M^{t+1} = \sum_{i,j} \rho_{ij}^{t+1} = \sum_{i,j}\sum_{i',j'\in\mathcal{N}_{ij}}\frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'}
+       = \sum_{i',j'}\frac{\rho^t_{i',j'}}{Z_{i'j'}}\sum_{i,j\in\mathcal{N}_{i'j'}}e^{\beta A_{ij}} = \sum_{i',j'}\frac{\rho^t_{i',j'}}{Z_{i'j'}}Z_{i'j'} = M^t \ \ \ \ \ \ \ \ \  (3)
+
+    </d-math>
+    
+    <p>To permute the sums, we used the fact that the neighborhood is 'reflexive', namely that <d-math>(i,j) \in \mathcal{N}(k,l) \Leftrightarrow (k,l) \in \mathcal{N}(i,j)</d-math>, which can be used to show the sums in (<a href="#3">3</a>) can be interchanged. <aside><d-math> \sum_{i,j}\sum_{k,l\in \mathcal{N}(i,j)}=\sum_{i,j}\sum_{k,l}\mathbb{1}_{k,l\in \mathcal{N}(i,j)}=\sum_{i,j}\sum_{k,l} \mathbb{1}
+_{i,j\in \mathcal{N}(k,l)}=\sum_{k,l}\sum_{i,j\in \mathcal{N}(k,l)}</d-math></aside></p>
+
+    <p>This evolution rule is captured in the broad family of mass conserving rules (<a href="#4">4</a>), where <d-math>I(x',x)</d-math> is the mass portion going from <d-math>x'</d-math> to <d-math>x</d-math>.</p>
+
+    <d-math style="text-align: center; margin: 2rem 0;" href="#4" id="4">
+      \rho^{t+1}(x) = \sum_{x'} I(x',x)\rho^t(x'),\,\,\,\sum_{x} I(x',x)=1 \ \ \ \ \ \ \ \ \  (4)
+
+    </d-math>
+
+    
+    <p>Where in our case, <d-math>I(x',x) = \frac{e^{\beta A(x)}}{Z(x')}\mathbb{1}_{x'\in \mathcal{N}_x}</d-math>. Notably, Flow-Lenia (<d-cite key="plantecFlowLeniaOpenendedEvolution2023a"></d-cite>) is another example of an update rule of the form (<a href="#4">4</a>), see Sec.<a href="#section-2.5">Similarities to Flow-Lenia</a>.</p>
+
+    <a class="marker" href="#section-2.3" id="section-2.3"></a>
+    <h3>Continuous Limit</h3>
+
+    <p>One of the strengths of the update rule (<a href="#2">2</a>) is that it admits a continuous limit, both in time and space,
+        as long as the affinity <d-math>A_{ij}</d-math> is a smooth function of space in this limit. To display this, we must rewrite (<a href="#2">2</a>)
+        to display the presence of the discretization parameters <d-math>\Delta t</d-math> and <d-math>\Delta x</d-math>. To do so, we first re-arrange (<a href="#2">2</a>)
+        into (<a href="#5">5</a>)</p>
+
+    <d-math style="text-align: center; margin: 2rem 0;" href="#5" id="5">
+      \rho_{ij}^{t+\Delta t}-\rho_{ij}^t = \sum_{i',j'\in \mathcal{N}_{ij}} \frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'} - \rho^t_{i'j'} \ \ \ \ \ \ \ \ \  (5)
+
+    </d-math>
+    
+    <p>Where we simply substracted <d-math>\rho_{ij}^t</d-math> on both sides, and re-label <d-math>t+1\rightarrow t+\Delta t</d-math> in order to make explicit the discretized time-derivative on the LHS. Now, we Taylor-expand the LHS in <d-math>\Delta t</d-math>, and the RHS in <d-math>\Delta x</d-math> to leading order. After re-arranging, we obtain :</p>
 
 
+    <d-math style="text-align: center; margin: 2rem 0;" href="#6" id="6">
+      \Delta t \partial_t\rho + O(\Delta t^2) = \frac{1}{3}\Delta x^2\left(\Delta \rho - 2\beta\nabla\cdot(\rho \nabla A) \right)+ O(\Delta x^4) \ \ \ \ \ \ \ \ \  (6)
+
+    </d-math>
+    
+    <p>Equation (<a href="#6">6</a>) tells us that the update rule will admit a continuous limit, so long as we correctly divide by <d-math>\Delta t</d-math> and <d-math>\Delta x^2</d-math> in the discretized equation. Consequently, the correctly rescaled discretization and its continuous limit are given in equation (<a href="#7">7</a>):</p>
+
+    <d-math style="text-align: center; margin: 2rem 0;" href="#7" id="7">
+       \rho^{t+\Delta t}_{ij}=\rho_{ij}^t(1-\frac{3\Delta t}{\Delta x^2})+\frac{3\Delta t}{\Delta x^2}\sum_{i',j'\in \mathcal{N}(i,j)} \frac{e^{\beta A_{ij}}}{Z_{i'j'}}\rho^t_{i'j'}
+    \partial_t \rho = \Delta\rho - 2 \beta \nabla \cdot (\rho \nabla A) \ \ \ \ \ \ \ \ \  (7)
+
+    </d-math>
+    
+    <p>We can see that in the original formula (<a href="#2">2</a>), we had (implicitly) chosen <d-math>3\Delta t = \Delta x^2</d-math>, with <d-math>\Delta x</d-math> given by the grid size. Notably, <d-math>\frac{3\Delta t}{\Delta x^2}=1</d-math> is a critical value, as the discretization breaks down above this point due to the negative pre-factor to <d-math>\rho_{ij}^t</d-math>. This limiting value is to be expected as even for pure diffusion with a similar full stencil, the stability condition requires <d-math>2\Delta t<\Delta x^2</d-math>. In practice, we always use <d-math>3\Delta t = \Delta x^2</d-math>, which both simplifies the evolution equation and maximizes the 'speed' of the dynamics by choosing the biggest possible <d-math>\Delta t</d-math>, given <d-math>\Delta x</d-math>.</p>
+
+    <p>Equation <a href="#7">7</a> de-mystifies the mass-conserving evolution rule, and the role of <d-math>\beta</d-math>. The rule effectively conserves mass by applying a combination of a fixed diffusion, and advection along the gradient of <d-math>A</d-math>. The <d-math>\beta</d-math> parameter sets the relative strength of the two effects; at <d-math>\beta=0</d-math> we have pure diffusion, and the effect of the advection becomes more prominent as we increase it (see Fig. \ref{fig:betaindifflenia} for display of the effect of <d-math>\beta</d-math>).</p>
+
+    <a class="marker" href="#section-2.4" id="section-2.4"></a>
+    <h3>MaCELenia</h3>
+
+    <a class="marker" href="#section-2.5" id="section-2.5"></a>
+    <h3>Similarities with Flow-Lenia</h3>
+
+    <a class="marker" href="#section-2.6" id="section-2.6"></a>
+    <h3>Cross Channel Mass Extension</h3>
+
+    <a class="marker" href="#section-3" id="section-3"></a>
+    <h2>MaCELenia  Capabilities</h2>
+
+    <a class="marker" href="#section-3.1" id="section-3.1"></a>
+    <h3>Results from Random Sampling</h3>
+
+    <a class="marker" href="#section-3.2" id="section-3.2"></a>
+    <h3>Diversity in One Parameter Set</h3>
 
 
-    <a class="marker" href="#section-6" id="section-6"></a>
-    <h2>Related Work</h2>
+    <a class="marker" href="#section-3.3" id="section-3.3"></a>
+    <h3>Intrinsic Evolution</h3>
 
-    <a class="marker" href="#section-7" id="section-7"></a>
+
+    <a class="marker" href="#section-3.4" id="section-3.4"></a>
+    <h3>Extrinsic Evolution</h3>
+
+    <a class="marker" href="#section-4" id="section-4"></a>
+    <h2>Versatility of MaCE</h2>
+
+    <a class="marker" href="#section-4.1" id="section-4.1"></a>
+    <h3>MaCE-NCA</h3>
+
+    <a class="marker" href="#section-4.2" id="section-4.2"></a>
+    <h3>MaCE Discrete CA</h3>
+
+    <a class="marker" href="#section-5" id="section-5"></a>
     <h2>Discussion</h2>
-    <p>A discussion of the results, their significance  and meaning.</p>
 
-    <a class="marker" href="#section-8" id="section-8"></a>
-    <h2>Conclusion </h2>
-    <p>Conclusion to wrap up the paper summarising what was done and how the results are significant</p>
+
+
+
+
 
 
 
