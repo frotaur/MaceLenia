@@ -3,99 +3,156 @@ import pygame
 from .lenia import Lenia
 import random
 
-
-def sobel_x(x):
-    k_x = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32, device="cuda:0").tile(
+def sobel_w(x,device="cpu"):
+    """
+        Args:
+            x: (B,C,H,W) tensor, where B is the batch size, C is the number of channels, H is the height and W is the width.
+    """
+    # In a (H,W) tensor, the derivative with width is differentiating with columns
+    k_w = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32, device=device).tile(
         (x.shape[1], 1, 1, 1)
     )
 
-    sx = torch.nn.functional.conv2d(x, k_x, groups=x.shape[1], stride=1, padding="same")
+    sw = torch.nn.functional.conv2d(x, k_w, groups=x.shape[1], stride=1, padding="same")
 
-    return sx.permute((0, 2, 3, 1))
+    return sw
 
 
-def sobel_y(x):
-    k_y = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], dtype=torch.float32, device="cuda:0").T.tile(
+def sobel_h(x,device="cpu"):
+    """
+        Args:
+            x: (B,C,H,W) tensor
+    """
+    k_h = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], dtype=torch.float32, device=device).tile(
         (x.shape[1], 1, 1, 1)
-    )
-    sy = torch.nn.functional.conv2d(x, k_y, groups=x.shape[1], stride=1, padding="same")
+    ) # (C, 1, k_size, k_size)
+    sh = torch.nn.functional.conv2d(x, k_h, groups=x.shape[1], stride=1, padding="same")
 
-    return sy.permute((0, 2, 3, 1))
+    return sh
 
 
-def sobel(x):
-    sx = sobel_x(x.to(torch.float32))
+def sobel(x,device="cpu"):
+    """
+        Args:
+        x: (B,C,H,W) tensor
 
-    sy = sobel_y(x.to(torch.float32))
-    sxy = torch.cat((sy[:, :, :, None, :], sx[:, :, :, None, :]), dim=3)
+        Returns:
+        sxy: (B,C,2,H,W) tensor, where the first channel is the sobel_y and the second channel is the sobel_x
+    """
+    sh = sobel_h(x.to(torch.float32),device=device)
+
+    sw = sobel_w(x.to(torch.float32),device=device)
+    sxy = torch.stack((sw, sh), dim=2) # (B,C,2,H,W) vector is derivative in (width, height), preparing for the RT which expexts those conventions
     return sxy
 
 
 def construct_mesh_grid(X, Y):
     x, y = torch.arange(X), torch.arange(Y)
-    mx, my = torch.meshgrid(x, y)
-    pos = torch.dstack((mx, my)) + 0.5
+    mx, my = torch.meshgrid(x, y) #  mx, my are (W,H)
+    pos = torch.dstack((mx, my)) + 0.5 # (W,H,2) pos[x,y] = (x,y)
     # pos = pos.permute((2,1,0))
-    return pos.to("cuda:0")
+    return pos
 
 
-def construct_ds(dd):
+def construct_ds(dd, device="cpu"):
     dxs = []
     dys = []
     for dx in range(-dd, dd + 1):
         for dy in range(-dd, dd + 1):
             dxs.append(dx)
             dys.append(dy)
-    dxs = torch.tensor(dxs, device="cuda:0")
-    dys = torch.tensor(dys, device="cuda:0")
+    dxs = torch.tensor(dxs, device=device)
+    dys = torch.tensor(dys, device=device)
     return dxs, dys
 
 
-class ReintegrationTracker:
-    def __init__(self, X, Y, dt, dd=2, sigma=0.65):
-        self.X = X
-        self.Y = Y
+
+class TrueRT:
+    def __init__(self, W, H, dt, dd=2, sigma=0.65,device='cpu'):
+        self.X = W
+        self.Y = H
         self.dd = dd
         self.dt = dt
         self.sigma = sigma
-        self.pos = construct_mesh_grid(X, Y)[None, ...]
-        self.dxs, self.dys = construct_ds(dd)
+        self.device = device
+        self.pos = self.construct_mesh_grid(W, H) # (W, H, 2) tensor with positions
+        self.dxs, self.dys = self.construct_ds(dd)
 
-    def step(self, grid, mu, dx, dy):
-        gridR = torch.roll(grid.permute(0, 2, 3, 1), (dx, dy), (1, 2))
+    def construct_mesh_grid(self, W, H):
+        x, y = torch.arange(W), torch.arange(H)
+        mx, my = torch.meshgrid(x, y)
+        pos = torch.dstack((mx, my)) + 0.5
+        return pos.to(self.device)
 
-        muR = torch.roll(mu, (dx, dy), (1, 2))
+    def construct_ds(self, dd):
+        dxs, dys = [], []
+        for dx in range(-dd, dd + 1):
+            for dy in range(-dd, dd + 1):
+                dxs.append(dx)
+                dys.append(dy)
 
-        dpmu = (self.pos[..., None] - muR).abs()
+        return dxs, dys
+    
 
-        sz = 0.5 - dpmu + self.sigma
-
-        area = torch.prod(torch.clip(sz, 0, min(1.0, 2 * self.sigma)), dim=-2) / (4 * self.sigma**2)
-
-        ngrid = gridR * area
-
-        return ngrid.permute(0, 3, 1, 2)
-
-    def apply(self, grid, F):
-        ma = self.dd - self.sigma-0.001
-
-        mu = self.pos[..., None] + torch.clamp(self.dt * F, min=-ma, max=ma)
-
-        mu = torch.clip(mu, self.sigma, self.X - self.sigma)
-        ngrid = torch.stack([self.step(grid, mu, dx, dy) for dx, dy in zip(self.dxs, self.dys)])
-
-        return ngrid.sum(dim=0)
-
-    def change_dd(self, dd):
+    def step(self, state, mu, dxs, dys):
         """
-        Change the dd parameter of the ReintegrationTracker.
-        Args:
-            dd (int): new dd value
+            Applies the RT method for neighbors defined by dxs, dys.
+
+            Args:
+                state: (B, C, W, H) tensor representing the current state.
+                mu: (B, C, W, H, 2) tensor with positions to update.
+                dxs: (N,) tensor of x offsets
+                dys: (N,) tensor of y offsets
         """
-        self.dd = dd
-        self.dxs, self.dys = construct_ds(dd)
+        # Do the steps for each dx, dy pair, and sum the contributions
+        # from all neighbors to the state.
         
-class FlowLenia(Lenia):
+        return torch.stack([self.step_one_dx(state, mu, dx, dy) for dx, dy in zip(dxs, dys)], dim=0).sum(dim=0)
+    
+    def step_one_dx(self, state, mu, dx, dy):
+        """
+            Applies one step of the RT method for a single dx, dy pair.
+            Args:
+                state: (B, C, W, H) tensor representing the current state.
+                mu: (B, C, W, H, 2) tensor with positions to update.
+                dx: x offset
+                dy: y offset
+            
+            Returns: Contribution to the state coming from the dx, dy shifted neighbors
+        """
+        state_rolled = torch.roll(state, shifts=(dx,dy), dims=(2,3))
+        mu_rolled = torch.roll(mu, shifts=(dx,dy), dims=(2,3))
+
+        # Compute signed distance from the center of the sigma square
+        # to the center of the currently considered square
+        distri_center_distance = torch.abs(mu_rolled - self.pos[None,None])  # (B, C, W, H, 2)
+        # Calculate the 'unclipped' and unnormalized overlap amount for both x and y directions
+        overlap_amount = .5+(self.sigma - distri_center_distance) # (B, C, W, H, 2)
+        overlap_area = torch.clip(overlap_amount, 0, min(2*self.sigma,1)).prod(dim=-1)
+        overlap_area = overlap_area/(4*self.sigma**2)  # Normalize the overlap area to [0,1]
+
+        return state_rolled*overlap_area # The overlap area is stolen propotionally from the state
+    
+    def apply_flow(self, state, flow):
+        """
+            Returns new state after applying flow to the current state.
+
+            Args:
+                state: (B, C,H,W) tensor representing the current state.
+                flow: (B, C, 2, H, W) vectors of flow for each channel
+        """
+        flow_perm = torch.einsum("bcfhw->bcwhf", flow)  # (B,C,2,H,W) to (B,C,W,H,2)
+        state_perm = torch.einsum("bchw->bcwh", state)  # (B,C,H,W) to (B,C,W,H)
+        max_flow = self.dd - self.sigma
+
+        mu = self.pos[None, None] + torch.clip(self.dt * flow_perm, -max_flow, max_flow)  # (B,C,W,H,2)
+
+        new_state = self.step(state_perm, mu, self.dxs, self.dys)  # (B,C,W,H) tensor with new state
+        new_state = torch.einsum("bcwh->bchw", new_state)
+
+        return new_state
+       
+class NewFlowLenia(Lenia):
     """Pytorch port of mass conserving FlowLenia"""
 
     def __init__(
@@ -110,13 +167,15 @@ class FlowLenia(Lenia):
         sigma_rt=0.65,
         has_food=False,
         interest_files=None,
-        save_dir=".",
+        save_dir="."
     ):
         self.dd = dd
         self.sigma_rt = sigma_rt
         self.theta_x = 2
         self.n = 2
-        self.rt = ReintegrationTracker(size[1], size[2], dt, dd=self.dd, sigma=self.sigma_rt)
+        self.rt = TrueRT(size[2], size[1], dt, dd=self.dd,  sigma=self.sigma_rt, device=device)
+
+        # self.rt = ReintegrationTracker(size[1], size[2], dt, dd=self.dd, sigma=self.sigma_rt)
         self.has_food = has_food
         super().__init__(
             size,
@@ -126,7 +185,7 @@ class FlowLenia(Lenia):
             state_init,
             device=device,
             interest_files=interest_files,
-            save_dir=save_dir,
+            save_dir=save_dir
         )
 
         self.Aff = self.compute_affinity()
@@ -148,20 +207,20 @@ class FlowLenia(Lenia):
         weights = self.weights[..., None, None]  # (B,C,C,1,1)
         Aff = (self.growth(Aff) * weights).sum(dim=1)  # (B,C,H,W) pre-exponential affinity
 
-        grad_u = sobel(Aff)  # (B,C,2,H,W)
+        grad_u = sobel(Aff,self.device)  # (B,C,2,H,W)
 
-        grad_x = sobel(self.state.sum(dim=1, keepdims=True))
+        grad_x = sobel(self.state.sum(dim=1, keepdims=True),self.device) # (B,1,2,H,W) gradient of the mass channel
 
         # added a sum over the channel in the alpha computation, as in the paper
         alpha = (
-            (self.state.permute(0, 2, 3, 1)[:, :, :, None, :].sum(dim=-1, keepdims=True) / self.theta_x)
+            (self.state.sum(dim=1, keepdims=True) / self.theta_x)
             ** self.n
-        ).clip(0, 1)
+        ).clip(0, 1)[:,:,None] # (B,C,1,H,W), broadcastable against the gradients
 
-        F = grad_u * (1 - alpha) - grad_x * alpha
+        F = grad_u * (1 - alpha) - grad_x * alpha # (B,C,2,H,W) final flow field
         # F= grad_u
 
-        return F
+        return F # (B,C,2,H,W)
 
     def update_food(self):
         """uncomment the death sections for death mechanics, but its finicky and i dont like it"""
@@ -184,9 +243,9 @@ class FlowLenia(Lenia):
 
     @torch.no_grad()
     def step(self):
-        Aff = self.compute_affinity()
+        Aff = self.compute_affinity()  # (B,C,2,H,W) flow field
 
-        self.state = self.rt.apply(self.state, Aff)
+        self.state = self.rt.apply_flow(self.state, Aff)
         if self.has_food:
             self.update_food()
         self.frames += 1  # Increment frame count
@@ -212,6 +271,7 @@ class FlowLenia(Lenia):
             if event.key == pygame.K_LEFT:
                 self.sigma_rt -= 0.02
                 self.rt.sigma = self.sigma_rt
+
             if event.key ==pygame.K_t:
                 if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
                     self.dt-= 0.01

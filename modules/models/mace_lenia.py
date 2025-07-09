@@ -36,6 +36,8 @@ class MaCELenia(Lenia):
         self.has_food = has_food  # Needed for initialization
         self.initial_food = 0.1* size[1] * size[2]  # Amount of food to add at initialization
         self.sense_food = sense_food
+        self.cr = 1./8.
+        self.use_cr = False  # Use cross channel affinity, if True, the affinity will be computed with the cross channel term
         super().__init__(
             size,
             dt=dt,  # dt does not matter this MaCE update
@@ -74,6 +76,7 @@ class MaCELenia(Lenia):
         if self.has_food:
             # If food is active, we perform the decay and mass redistribution step
             self._food_step()
+        self.frames += 1  # Increment frame count
 
     def _mace_step(self, sense_food=False):
         """
@@ -145,7 +148,10 @@ class MaCELenia(Lenia):
             # Hardcoded for now, but remove affinity when matter is too low, so it cant eat
             Aff = Aff + (food_aff)  # (B,C,H,W) food affinity
 
-        return Aff  # (B,C,H,W) Affinity tensor
+        if(self.use_cr):
+            return Aff - self.cr/2 * self.state
+        else:
+            return Aff  # (B,C,H,W) Affinity tensor
 
     def _food_step(self):
         """
@@ -256,7 +262,13 @@ class MaCELenia(Lenia):
                         self.food_channel = self.random_food_chan(food_amount=self.initial_food)
                     else:
                         self.food_channel = torch.zeros_like(self.food_channel)
-
+            if event.key == pygame.K_e:
+                if(pygame.key.get_mods() & pygame.KMOD_SHIFT):
+                    self.cr = max(0.0, self.cr - 0.1)
+                elif(pygame.key.get_mods() & pygame.KMOD_CTRL):
+                    self.cr = min(5.0, self.cr + 0.1)
+                else:
+                    self.use_cr = not self.use_cr
         mouse_state = self.get_mouse_state(camera)
         if mouse_state.left or mouse_state.right:
             add_rad = self.k_size / 2.0

@@ -69,7 +69,8 @@ class AsymptoticMaCELenia(MaCELenia):
         print('dt is ; ', self.dt)
         # Compute affinity with growth function of Lenia
         Aff = self._compute_affinity(sense_food=sense_food)  # (B,C,H,W) affinity matrix
-        expAff = torch.exp(self.b * Aff)  # Exponentiate with beta
+        
+        expAff = torch.exp(self.b * Aff-self.cr/2)  # Exponentiate with beta
 
         # Unfold expAff to prepare the computation of normalization Z
         Z = F.pad(expAff, (1, 1, 1, 1), mode="circular")  # (B,C,H+2,W+2) for the (3,3) kernel

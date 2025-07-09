@@ -108,6 +108,7 @@ class Lenia(DevModule, Automaton):
             self.interest_files = None
         self.chosen_interesting = 0
 
+        self.frames = 0 
     def update_params(self, params: LeniaParams, k_size_override=None):
         """
         Updates the Lenia parameters (carefully).
@@ -117,6 +118,7 @@ class Lenia(DevModule, Automaton):
             params : LeniaParams
             k_size_override : int, if provided, will override the kernel size stored in params
         """
+        self.frames=0
         if isinstance(params, LeniaParams):
             params = params.param_dict
 
@@ -191,6 +193,7 @@ class Lenia(DevModule, Automaton):
         Sets the initial state of the automaton using fractal perlin noise.
         Max wavelength is k_size*1.5, chosen a bit randomly
         """
+        self.frames = 0
         self.state = perlin_fractal(
             (self.batch, self.h, self.w),
             int(self.k_size * 1.5),
@@ -205,6 +208,7 @@ class Lenia(DevModule, Automaton):
         Sets initial state using one-wavelength perlin noise.
         Default wavelength is 2*K_size
         """
+        self.frames = 0
         if not wavelength:
             wavelength = self.k_size
         self.state = perlin(
@@ -223,6 +227,7 @@ class Lenia(DevModule, Automaton):
             fractal : bool, whether to use fractal perlin noise or not
             radius : int, radius of the circle. If None, will be set to 3*k_size
         """
+        self.frames = 0
         if radius is None:
             radius = self.k_size * 3
         if fractal:
@@ -411,6 +416,7 @@ class Lenia(DevModule, Automaton):
         # Apply growth and clamp
         self.state = torch.clamp(self.state + self.dt * dx, 0, 1)  # (B,C,H,W)
 
+        self.frames += 1  # Increment frame count
     def kernel_fftconv(self, state):
         """
         Compute convolution with the state using the fft kernel.
@@ -476,6 +482,31 @@ class Lenia(DevModule, Automaton):
             ] = kern[i].cpu()
         return image  # (3,H,W)
 
+    def _random_params(self, true_random=False):
+        """
+        Generates random parameters for the Lenia automaton.
+        If true_random is True, uses the truerandom generation method.
+        """
+        if true_random:
+            params = LeniaParams.random_gen(
+                batch_size=self.batch,
+                num_channels=self.C,
+                device=self.device,
+                k_size=self.k_size,
+                k_mult=self.k_mult,
+            )
+        else:
+            params = LeniaParams.default_gen(
+                batch_size=self.batch,
+                num_channels=self.C,
+                device=self.device,
+                k_size=self.k_size,
+                k_mult=self.k_mult,
+            )
+
+        self.update_params(params, k_size_override=None)  # Update the parameters
+        self.set_init_circle()  # Reset the state to circle
+        
     def process_event(self, event, camera=None):  # This method is used to process the pygame events
         """
         N (+ shift) -> New random (truerandom) parameters
@@ -564,14 +595,7 @@ class Lenia(DevModule, Automaton):
 
                 self.update_params(self.params, k_size_override=None)  # Translate to arbi if needed
             if event.key == pygame.K_m:
-                if self.interest_files:
-                    # Load random interesting param, if we have some
-                    file = self.interest_files[self.chosen_interesting]  # To add as parameter
-                    self.chosen_interesting = (self.chosen_interesting + 1) % len(self.interest_files)
-
-                    params = LeniaParams(from_file=file, device=self.device)
-                    self.update_params(params, k_size_override=None)
-                    print("Loaded : ", file)
+                self.load_interest_file()
             if event.key == pygame.K_s:
                 if pygame.key.get_mods() & pygame.KMOD_SHIFT:
                     # Save current state + parameters
@@ -583,6 +607,7 @@ class Lenia(DevModule, Automaton):
                 # Toggle display kernel
                 self.display_kernel = not self.display_kernel
             if event.key == pygame.K_DELETE | pygame.K_BACKSPACE:
+                self.frames = 0
                 self.state = torch.zeros_like(self.state)
             if event.key == pygame.K_t:
                 # Just used for random test, anything can go here
@@ -607,6 +632,16 @@ class Lenia(DevModule, Automaton):
                 )
                 self.update_params(params, k_size_override=None)
 
+    def load_interest_file(self):
+        if self.interest_files:
+            # Load random interesting param, if we have some
+            file = self.interest_files[self.chosen_interesting]  # To add as parameter
+            self.chosen_interesting = (self.chosen_interesting + 1) % len(self.interest_files)
+
+            params = LeniaParams(from_file=file, device=self.device)
+            self.update_params(params, k_size_override=None)
+            print("Loaded : ", file)
+    
     def compute_ker(self, batch=0):
         """
         Prepares the kernel and translate it to an RGB image for viewing.
@@ -694,7 +729,7 @@ class Lenia(DevModule, Automaton):
         self.state = F.pad(self.state, (pad_w, pad_w, pad_h, pad_h), mode="constant", value=0.0)
 
     def get_string_state(self):
-        return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi} "
+        return f"g_arb : {self.g_arbi}, k_arb : {self.k_arbi}, {self.frames} F"
 
 
 def create_smooth_circular_mask(tensor: torch.Tensor, radius: int) -> torch.Tensor:

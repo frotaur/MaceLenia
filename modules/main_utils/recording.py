@@ -34,9 +34,9 @@ def add_frame(writer, worldsurface):
     writer.write(frame)
 
 
-def print_screen(worldsurface):
+def print_screen(worldsurface, name=None):
     worldmap = pygame.surfarray.array3d(worldsurface)  # (W,H,3)
     os.makedirs("images", exist_ok=True)
     numimgs = len(os.listdir("images/"))
-    img_name = f"img_{numimgs}"
+    img_name = f"img_{numimgs}" if name is None else name
     save_image(torch.tensor(worldmap, dtype=float).permute(2, 1, 0) / 255.0, folder="images", name=img_name)

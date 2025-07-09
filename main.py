@@ -33,8 +33,8 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             device=device,
             has_food=False,
             # save_dir="saved_macelenia",
-            save_dir="saved_macelenia",
-            interest_files=(cur_dir / "demo_macelenia").as_posix(),
+            save_dir="compare_mace",
+            interest_files=(cur_dir / "compare_mace").as_posix(),
         ),
         "MaCELeniaCrossChannel": lambda h, w: MaCELeniaCrossChannel(
             (1, h, w),
@@ -58,8 +58,9 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             (1, h, w),
             dt=0.1,
             num_channels=3,
+            dd=2,
             save_dir="saved_flow_lenia",
-            interest_files=(cur_dir / "demo_macelenia").as_posix(),
+            interest_files=(cur_dir / "compare_mace").as_posix(),
             device=device,
             has_food=False,
         ),
@@ -78,6 +79,16 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             device=device,
             has_food=False,
         ),
+        "NewFlowLenia": lambda h, w: NewFlowLenia(
+            (1, h, w),
+            dt=0.1,
+            num_channels=3,
+            dd=2,
+            save_dir="saved_new_flow_lenia",
+            interest_files=(cur_dir / "compare_mace").as_posix(),
+            device=device,
+            has_food=False,
+        ),
     }
     sW, sH = screen
 
@@ -89,7 +100,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     device = device
 
     fps = 120  # Visualization (target) frames per second
-    video_fps = 60  # Video frames per second
+    video_fps = 20  # Video frames per second
 
     text_size = int(sH / 45)
     title_size = int(text_size * 1.3)
@@ -115,7 +126,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
     writer = None
 
     # Then when initializing the first automaton:
-    initial_automaton = "MaCELenia"
+    initial_automaton = "FlowLenia"
     auto = automaton_options[initial_automaton](H, W)
 
     description, help_text = auto.get_help()
@@ -284,6 +295,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
         index=4,
     )
 
+    steps = 0
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -303,7 +315,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
                         writer.release()
                 if event.key == pygame.K_p:
                     print_screen(auto.worldsurface)
-                if event.key == pygame.K_s:
+                if event.key == pygame.K_RETURN:
                     auto.step()
                 if event.key == pygame.K_h:
                     display_help = not display_help
@@ -417,6 +429,7 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
         if not stopped:
             auto.step()  # step the automaton
+            steps+=1
 
         auto.draw()  # draw the worldstate
         world_surface = auto.worldsurface
@@ -432,9 +445,10 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
             if launch_vid:  # If the video is not launched, we create it
                 launch_vid = False
                 writer = launch_video(size=(H, W), fps=video_fps, fourcc="mp4v")
-            add_frame(
-                writer, world_surface
-            )  # (in the future, we may add the zoomed frame instead of the full frame)
+            if(steps%4==0):
+                add_frame(
+                    writer, world_surface
+                )  # (in the future, we may add the zoomed frame instead of the full frame) 
             pygame.draw.circle(screen, (255, 0, 0), (sW - 10, 15), 7)
 
         if display_help:
@@ -476,4 +490,4 @@ def gameloop(screen: tuple[int], world: tuple[int], device: str):
 
 
 if __name__ == "__main__":
-    gameloop((1920, 1080), (500, 500), "cuda:0")
+    gameloop((1920, 1080), (500, 400), "cuda:0")
