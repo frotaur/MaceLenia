@@ -3,6 +3,6 @@ __pycache__
 .DS_Store
 videos
 images
-saved_diff_lenia
+saved_*
 test.ipynb
 benchmark.ipynb

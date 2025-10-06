@@ -4,19 +4,25 @@ import pygame
 import json
 
 
-def launch_video(size, fps, fourcc="avc1"):
+def launch_video(size, fps, save_folder="videos", save_name=None,fourcc="mp4v"):
     """
     Returns Videowriter, ready to record and save the video.
 
     Parameters:
     size: (H,W) 2-uple size of the video
     fps: int, frames per second
+    save_folder: str, folder to save the video
+    save_name: str, name of the video. If None, will save as "vid_<number>.mp4"
     fourcc : Encoder, must work with .mp4 videos
     """
-    os.makedirs("videos", exist_ok=True)
+    os.makedirs(save_folder, exist_ok=True)
     fourcc = cv2.VideoWriter_fourcc(*fourcc)
-    numvids = len(os.listdir("videos/"))
-    vid_loc = f"videos/vid_{numvids}.mp4"
+    if(save_name is None):
+        numvids = len(os.listdir(save_folder))
+        vid_loc = os.path.join(save_folder,f"vid_{numvids}.mp4")
+    else:
+        vid_loc = os.path.join(save_folder, f"{save_name}.mp4")
+        
     return cv2.VideoWriter(vid_loc, fourcc, fps, (size[1], size[0]))
 
 

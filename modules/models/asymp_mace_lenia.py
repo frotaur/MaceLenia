@@ -66,7 +66,7 @@ class AsymptoticMaCELenia(MaCELenia):
             Aff : (B,C,H,W), affinity tensor of the model
         """
         B, C, H, W = self.state.shape
-
+        print('dt is ; ', self.dt)
         # Compute affinity with growth function of Lenia
         Aff = self._compute_affinity(sense_food=sense_food)  # (B,C,H,W) affinity matrix
         expAff = torch.exp(self.b * Aff)  # Exponentiate with beta
@@ -82,7 +82,7 @@ class AsymptoticMaCELenia(MaCELenia):
             B, C, 9, H, W
         )  # (B,C,9,H,W), unfold again to distribute mass to all 9 neighbors
 
-        redistribution = (Aff[:, :, None] * to_give).sum(dim=2)  # (B,C,H,W) result of the diffusion
+        redistribution = (expAff[:, :, None] * to_give).sum(dim=2)  # (B,C,H,W) result of the diffusion
 
         self.state = self.state + 3 * self.dt / (self.dx**2) * (redistribution - self.state)
 

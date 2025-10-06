@@ -66,6 +66,9 @@ Finally, on the bottom right there is a dropdown menu to select the different av
 - EvolvableMaCELenia :(EXPERIMENTAL) Implementation that allows extrinsic evolution experiments, and manual evolution. Not as well documented, and still experimental (might be buggy)
 
 *To skim nice dynamics, we recommend cycling throught the saved parameters with `M` on `MaCELenia` and `MaCELeniaCrossChannel` (and re-initialize with 'O'), and potentially trying random parameters using `N` and `A`.*
+
+*When you saved interesting parameter (or full states) with the keys `S` or `shift+S`, they are saved in folder named `saved_<model_name>`. If you'd like to load them to re-experience them, there are two ways. Either drop the `.pt` files into the `demo_<model>` folders, and cycle with the `M` key to load them sequentially. Alternatively, you can look in lines 28-80 of `main.py`. In the instantiation of the automata classes, you can modify the `interest_dir` argument, and set it to your saved parameter folder. Then, cycling with `M` will cycle from parameters from this folder.*
+
 ## Code structure
 Here, we briefly go over the code structure, and chiefly where the MaCE rule is implemented. Main files that could be of interest are marked with 🔴. All files marked with the sign have been extensively documented, and we have made effort so the code is as readable and understandable as possible.
 
